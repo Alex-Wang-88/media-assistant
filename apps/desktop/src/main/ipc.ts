@@ -11,7 +11,7 @@ import {
   publishStartInputSchema,
 } from "@yoom/desktop-contracts";
 import { type BrowserWindow, ipcMain, shell } from "electron";
-import { streamChat } from "./chat-client";
+import { getAgentStatus, streamChat } from "./chat-client";
 import type { Workspace } from "./workspace";
 
 type WorkspaceAccess = {
@@ -61,6 +61,7 @@ export function registerIpc(access: WorkspaceAccess): void {
     // safer than leaking unselected documents or forwarding the full knowledge base.
     return [];
   });
+  ipcMain.handle(ipcChannels.chatStatus, () => getAgentStatus());
   ipcMain.handle(ipcChannels.chatSend, async (event, raw) => {
     const input = chatSendInputSchema.parse(raw);
     await streamChat(input, (streamEvent) => {

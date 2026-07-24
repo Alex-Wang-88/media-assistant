@@ -1,9 +1,10 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from app.config import Settings
+from app.models.schemas import HealthResponse
 from app.providers.article import YunbloomSharedArticleProvider, YunrongArticleProvider
 from app.providers.chat import YunbloomChatProvider
 from app.providers.yunbloom_share import YunbloomShareClient
@@ -43,6 +44,8 @@ app.include_router(catalog_router)
 app.include_router(chat_router)
 
 
-@app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+@app.get("/health", response_model=HealthResponse)
+async def health(request: Request) -> HealthResponse:
+    if getattr(request.app.state, "chat_provider", None) is not None:
+        return HealthResponse(agent="ready")
+    return HealthResponse(agent="unconfigured")

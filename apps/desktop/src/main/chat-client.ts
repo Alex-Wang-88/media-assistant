@@ -1,8 +1,16 @@
 import {
+  type AgentStatus,
+  agentStatusSchema,
   type ChatSendInput,
   type ChatStreamEvent,
   chatStreamEventSchema,
 } from "@yoom/desktop-contracts";
+import { z } from "zod";
+
+const healthResponseSchema = z.object({
+  status: z.literal("ok"),
+  agent: z.enum(["ready", "unconfigured"]),
+});
 
 export class ChatApiError extends Error {
   readonly retryable: boolean;
@@ -11,6 +19,30 @@ export class ChatApiError extends Error {
     super(message);
     this.name = "ChatApiError";
     this.retryable = retryable;
+  }
+}
+
+export async function getAgentStatus(
+  apiUrl = process.env.YOOM_API_URL ?? "http://127.0.0.1:8000",
+): Promise<AgentStatus> {
+  try {
+    const response = await fetch(`${apiUrl.replace(/\/$/, "")}/health`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!response.ok) {
+      return agentStatusSchema.parse({
+        state: "unavailable",
+        detail: `状态检测失败（${response.status} ${response.statusText}）`,
+      });
+    }
+    const health = healthResponseSchema.parse(await response.json());
+    return agentStatusSchema.parse({ state: health.agent });
+  } catch (error) {
+    return agentStatusSchema.parse({
+      state: "unavailable",
+      detail: `无法连接本地 AI 服务：${error instanceof Error ? error.message : String(error)}`,
+    });
   }
 }
 

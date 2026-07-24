@@ -74,6 +74,13 @@ class ChatRequest(BaseModel):
     auto_execute: bool = Field(alias="autoExecute")
 
 
+class HealthResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ok"] = "ok"
+    agent: Literal["ready", "unconfigured"]
+
+
 class ChatTextDelta(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

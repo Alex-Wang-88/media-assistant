@@ -4,7 +4,9 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pytest import MonkeyPatch
 
+from app.main import app as main_app
 from app.models.schemas import ArticleRequest, ArticleResult
 from app.routers.articles import router
 from app.services.delivery import DeliveryService
@@ -43,3 +45,12 @@ def test_generate_returns_pending_delivery_not_server_file() -> None:
     payload = response.json()
     assert payload["relative_path"].startswith("文章/")
     assert payload["content"].startswith("---")
+
+
+def test_health_reports_unconfigured_agent(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.delenv("YUNBLOOM_SHARE_URL", raising=False)
+    monkeypatch.delenv("YUNBLOOM_API_KEY", raising=False)
+    with TestClient(main_app) as client:
+        response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "agent": "unconfigured"}
