@@ -1,7 +1,7 @@
 import * as Switch from "@radix-ui/react-switch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Artifact, ChatMessage } from "@yoom/desktop-contracts";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { applyChatEvent, type ConversationMessage, type ConversationToolCall } from "./chat-state";
@@ -20,8 +20,12 @@ export function App() {
   const [message, setMessage] = useState("");
   const [conversationMessages, setConversationMessages] = useState<ConversationMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [agentRequestFailed, setAgentRequestFailed] = useState(false);
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null);
-  const messagesEnd = useRef<HTMLDivElement>(null);
+  const messagesViewport = useRef<HTMLDivElement>(null);
+  const shouldFollowLatestMessage = useRef(true);
+  const forceLatestMessage = useRef(false);
+  const isProgrammaticScroll = useRef(false);
   const skipNextProjectReset = useRef(false);
   const workspace = useQuery({
     queryKey: ["workspace"],
@@ -30,6 +34,13 @@ export function App() {
   const workspaces = useQuery({
     queryKey: ["workspaces"],
     queryFn: () => window.desktop.workspace.list(),
+  });
+  const agentStatus = useQuery({
+    queryKey: ["agent-status"],
+    queryFn: () => window.desktop.chat.status(),
+    enabled: Boolean(workspace.data),
+    retry: false,
+    refetchInterval: 10_000,
   });
   const projects = useQuery({
     queryKey: ["projects", workspace.data],
@@ -80,11 +91,23 @@ export function App() {
     setConversationMessages([]);
     setMessage("");
     setIsStreaming(false);
+    shouldFollowLatestMessage.current = true;
+    forceLatestMessage.current = false;
   }, [ui.selectedProjectId]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: each streamed delta should keep the latest content visible
-  useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: message layout changes determine whether the viewport should follow the latest content
+  useLayoutEffect(() => {
+    const viewport = messagesViewport.current;
+    if (!viewport) return;
+    if (!forceLatestMessage.current && !shouldFollowLatestMessage.current) return;
+
+    const bottom = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
+    if (Math.abs(viewport.scrollTop - bottom) > 0.5) {
+      isProgrammaticScroll.current = true;
+      viewport.scrollTop = bottom;
+    }
+    shouldFollowLatestMessage.current = true;
+    forceLatestMessage.current = false;
   }, [conversationMessages]);
 
   const sendMessage = async () => {
@@ -111,10 +134,10 @@ export function App() {
       status: "streaming",
       tools: [],
     };
+    forceLatestMessage.current = true;
     setConversationMessages((current) => [...current, userMessage, assistantMessage]);
     setMessage("");
     setIsStreaming(true);
-    let streamFailed = false;
     try {
       if (!projectId) {
         const project = await window.desktop.tasks.create({
@@ -135,20 +158,19 @@ export function App() {
           autoExecute: ui.autoExecute,
         },
         (event) => {
-          if (event.type === "error") streamFailed = true;
+          if (event.type === "error") setAgentRequestFailed(true);
+          if (event.type === "finish") setAgentRequestFailed(false);
           setConversationMessages((current) => applyChatEvent(current, assistantId, event));
         },
       );
-      if (streamFailed) setMessage((current) => current || prompt);
     } catch (error) {
-      streamFailed = true;
+      setAgentRequestFailed(true);
       const errorMessage = readableError(error);
       setConversationMessages((current) =>
         current.map((entry) =>
           entry.id === assistantId ? { ...entry, status: "error", error: errorMessage } : entry,
         ),
       );
-      setMessage((current) => current || prompt);
     } finally {
       setIsStreaming(false);
     }
@@ -195,6 +217,19 @@ export function App() {
       </main>
     );
   }
+
+  const detectedAgentState = agentStatus.isPending
+    ? "checking"
+    : agentStatus.isError
+      ? "unavailable"
+      : agentStatus.data.state;
+  const displayedAgentState = agentRequestFailed ? "unavailable" : detectedAgentState;
+  const agentLabels = {
+    checking: "Agent 检测中",
+    ready: "Agent 就绪",
+    unconfigured: "Agent 未配置",
+    unavailable: "Agent 未连接",
+  } as const;
 
   return (
     <main className="shell">
@@ -304,12 +339,25 @@ export function App() {
             </strong>
             <small>{workspaces.data?.find((entry) => entry.path === workspace.data)?.name}</small>
           </div>
-          <span className={isStreaming ? "agent-status working" : "agent-status"}>
+          <span className={`agent-status ${displayedAgentState}`}>
             <span />
-            {isStreaming ? "Agent 工作中" : "Agent 就绪"}
+            {agentLabels[displayedAgentState]}
           </span>
         </header>
-        <div className="messages">
+        <div
+          className="messages"
+          ref={messagesViewport}
+          onScroll={(event) => {
+            const viewport = event.currentTarget;
+            if (isProgrammaticScroll.current) {
+              isProgrammaticScroll.current = false;
+              return;
+            }
+            const distanceFromBottom =
+              viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+            shouldFollowLatestMessage.current = distanceFromBottom <= 24;
+          }}
+        >
           {conversationMessages.length === 0 ? (
             <div className="welcome-card">
               <span className="welcome-mark">
@@ -353,7 +401,6 @@ export function App() {
               {conversationMessages.map((entry) => (
                 <ChatBubble key={entry.id} message={entry} />
               ))}
-              <div ref={messagesEnd} />
             </div>
           )}
         </div>
@@ -518,7 +565,7 @@ function ChatBubble({ message }: { message: ConversationMessage }) {
         <div className="message-error">
           <strong>请求失败</strong>
           <span>{message.error}</span>
-          <small>输入内容已恢复，可直接再次发送。</small>
+          <small>可重新输入内容后再次发送。</small>
         </div>
       )}
     </article>

@@ -1,6 +1,6 @@
 import type { ChatSendInput, ChatStreamEvent } from "@yoom/desktop-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamChat } from "../src/main/chat-client";
+import { getAgentStatus, streamChat } from "../src/main/chat-client";
 
 const input: ChatSendInput = {
   requestId: crypto.randomUUID(),
@@ -14,6 +14,29 @@ const input: ChatSendInput = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("chat API adapter", () => {
+  it("reads agent readiness from the existing health endpoint", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ status: "ok", agent: "ready" }), {
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+    );
+    await expect(getAgentStatus("http://api.test")).resolves.toEqual({ state: "ready" });
+  });
+
+  it("reports an unreachable health endpoint without throwing into the renderer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Promise.reject(new Error("connection refused"))),
+    );
+    await expect(getAgentStatus("http://api.test")).resolves.toMatchObject({
+      state: "unavailable",
+    });
+  });
+
   it("parses split SSE frames incrementally", async () => {
     const encoder = new TextEncoder();
     const source = [

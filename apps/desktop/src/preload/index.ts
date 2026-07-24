@@ -1,4 +1,5 @@
 import type {
+  AgentStatus,
   Artifact,
   ChatSendInput,
   ChatStreamEvent,
@@ -23,6 +24,7 @@ const channels = {
   filesOpen: "files:open",
   filesReveal: "files:reveal",
   knowledgeSearch: "knowledge:search",
+  chatStatus: "chat:status",
   chatSend: "chat:send",
   chatEvent: "chat:event",
   publishStart: "publish:start",
@@ -48,6 +50,17 @@ function expectObject<T>(value: unknown): T {
     throw new TypeError("IPC 返回值应为对象");
   }
   return value as T;
+}
+
+function expectAgentStatus(value: unknown): AgentStatus {
+  const status = expectObject<Record<string, unknown>>(value);
+  if (
+    !["ready", "unconfigured", "unavailable"].includes(String(status.state)) ||
+    (status.detail !== undefined && typeof status.detail !== "string")
+  ) {
+    throw new TypeError("Agent 状态格式无效");
+  }
+  return status as AgentStatus;
 }
 
 const api: DesktopApi = {
@@ -89,6 +102,7 @@ const api: DesktopApi = {
         ),
   },
   chat: {
+    status: () => ipcRenderer.invoke(channels.chatStatus).then(expectAgentStatus),
     send: async (input: ChatSendInput, onEvent: (event: ChatStreamEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, raw: unknown) => {
         const event = expectChatStreamEvent(raw);

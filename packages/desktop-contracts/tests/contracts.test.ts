@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentStatusSchema,
   chatSendInputSchema,
   chatStreamEventSchema,
   createProjectInputSchema,
@@ -8,6 +9,11 @@ import {
 } from "../src";
 
 describe("desktop contracts", () => {
+  it("validates detected agent states", () => {
+    expect(agentStatusSchema.parse({ state: "ready" })).toEqual({ state: "ready" });
+    expect(agentStatusSchema.safeParse({ state: "working" }).success).toBe(false);
+  });
+
   it("rejects blank task names", () => {
     expect(createProjectInputSchema.safeParse({ name: " " }).success).toBe(false);
   });

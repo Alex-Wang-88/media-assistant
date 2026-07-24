@@ -91,6 +91,12 @@ export const chatSendInputSchema = z.object({
 });
 export type ChatSendInput = z.infer<typeof chatSendInputSchema>;
 
+export const agentStatusSchema = z.object({
+  state: z.enum(["ready", "unconfigured", "unavailable"]),
+  detail: z.string().optional(),
+});
+export type AgentStatus = z.infer<typeof agentStatusSchema>;
+
 export const chatStreamEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("start"),
@@ -200,6 +206,7 @@ export interface DesktopApi {
     search(projectId: string, query: string): Promise<z.infer<typeof knowledgeHitSchema>[]>;
   };
   chat: {
+    status(): Promise<AgentStatus>;
     send(input: ChatSendInput, onEvent: (event: ChatStreamEvent) => void): Promise<void>;
   };
   publish: {
@@ -219,6 +226,7 @@ export const ipcChannels = {
   filesOpen: "files:open",
   filesReveal: "files:reveal",
   knowledgeSearch: "knowledge:search",
+  chatStatus: "chat:status",
   chatSend: "chat:send",
   chatEvent: "chat:event",
   publishStart: "publish:start",
