@@ -1,0 +1,30 @@
+{
+  "name": "yoom-media-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:desktop": "pnpm --filter @yoom/desktop dev",
+    "build": "pnpm --filter @yoom/desktop build",
+    "check": "biome check . && pnpm typecheck",
+    "typecheck": "tsc -p packages/desktop-contracts && tsc -p packages/markdown-schemas && tsc -p packages/tag-ontology && tsc -p apps/desktop",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "contracts:check": "vitest run packages/desktop-contracts packages/markdown-schemas",
+    "markdown:check": "vitest run packages/markdown-schemas",
+    "catalog:import": "node scripts/import-yunrong-catalog.mjs",
+    "api:openapi": "uv run --directory apps/api python -m app.export_openapi",
+    "api:client": "pnpm api:openapi && openapi-typescript apps/api/openapi.json -o packages/generated-api-client/src/schema.d.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.5",
+    "@types/node": "26.1.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  }
+}

@@ -1,0 +1,42 @@
+[project]
+name = "yoom-api"
+version = "0.1.0"
+description = "Cloud agent, delivery and provider API for the Yoom desktop assistant"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "alembic==1.18.5",
+  "celery==5.6.3",
+  "fastapi==0.139.2",
+  "httpx==0.28.1",
+  "minio==7.2.20",
+  "pydantic==2.13.4",
+  "pydantic-ai==2.16.0",
+  "redis==8.0.1",
+  "sqlalchemy==2.0.51",
+  "uvicorn==0.51.0",
+]
+
+[dependency-groups]
+dev = [
+  "pyright==1.1.411",
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.15.22",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+include = ["app", "tests"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]

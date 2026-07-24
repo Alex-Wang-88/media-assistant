@@ -1,0 +1,482 @@
+{
+  "schema": "yoom.yunrong-plugin-catalog/v1",
+  "sourceDate": "2026-06-22",
+  "plugins": [
+    {
+      "id": "yunrong.plugin.http.1283ddbf69566ff8",
+      "type": "HTTP",
+      "category": "数学工具",
+      "name": "计算器",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.5e960caea2136ac3",
+      "type": "HTTP",
+      "category": "时间",
+      "name": "获取当前时间",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.72f5d232d67c9328",
+      "type": "HTTP",
+      "category": "时间",
+      "name": "计算指定日期是星期几",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.143ff6bce25c3dcd",
+      "type": "HTTP",
+      "category": "联网搜索",
+      "name": "Google搜索",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.12e2ceb03db7b5ff",
+      "type": "HTTP",
+      "category": "语音",
+      "name": "语音转文字(极速版)",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.efe6745d2554d5ab",
+      "type": "HTTP",
+      "category": "语音",
+      "name": "语音转文字",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.9ff844ad4daa45a8",
+      "type": "HTTP",
+      "category": "语音",
+      "name": "语音合成-通义千问",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.5bb05dfb69a02c0e",
+      "type": "HTTP",
+      "category": "AI 视频",
+      "name": "豆包-文生视频",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.01fcd7a8ef0400d3",
+      "type": "HTTP",
+      "category": "AI 视频",
+      "name": "豆包-图生视频-首帧",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.42a37e1a3fa32bc2",
+      "type": "HTTP",
+      "category": "AI 视频",
+      "name": "豆包-图生视频-首尾帧",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.837655d755f2fb7b",
+      "type": "HTTP",
+      "category": "AI 视频",
+      "name": "Veo 3.1 - 文生视频",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.f88bd51828f9c7ff",
+      "type": "HTTP",
+      "category": "AI 视频",
+      "name": "Veo 3.1 - 图生视频-首尾帧",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.f51302aba7bd4b22",
+      "type": "HTTP",
+      "category": "AI 视频",
+      "name": "Sora 2 视频生成",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.72f99791dd8077ca",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "Word 文档生成",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.bf1ac15c8a07988d",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "AI PPT 生成",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.01ae359ac550878e",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "PDF转图片",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.a00a3038c556125e",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "Excel 生成",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.38d69a1cfc327100",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "文档解析",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.6311541bee6d7f97",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "Markdown 文档生成",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.ea5edadc133e9606",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "HTML 网页部署-积墨",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.50288061b2a32f4f",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "代码执行器",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.3d708e8e8b1f9247",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "邮件",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.9341aa4d8b14eafb",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "二维码生成",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.208b16da349e15c8",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "网页解析",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.6d6ccd54b340b617",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "企业微信发送群消息",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.009665b46a999c0f",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "飞书发送群消息",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.2c9e5e89f73784ca",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "钉钉发送群消息",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.7ffea9310ba9e244",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "Pixabay 图片搜索",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.744d9159c61484d0",
+      "type": "HTTP",
+      "category": "生产力",
+      "name": "Pixabay 视频搜索",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.6dc537aaaef2a708",
+      "type": "HTTP",
+      "category": "图表",
+      "name": "图表大师",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.7857786e0c565cae",
+      "type": "HTTP",
+      "category": "图表",
+      "name": "Mermaid专业图表",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.c59fdacd6a72a12c",
+      "type": "HTTP",
+      "category": "图表",
+      "name": "思维导图",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.http.824cb669198fb323",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "豆包-Seedream 4.0 图像生成",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.f7f57e55bc7f48c8",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "豆包图片生成/编辑-Seedream 4.5",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.76308834364144c8",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "豆包-文生图",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.8ad5b64305e5057e",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "豆包-图像编辑",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.426ff78b5173614e",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "Z-Image-Turbo 文生图",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.00d06493ed763a85",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "Nano Banana 图像编辑/生成",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.d5e90452436af5c4",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "Nano Banana Pro 图像编辑/生成",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.fef00e5b5e3a2478",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "可灵绘图",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.06a3653601084950",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "图片转 3D 模型",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.9c4113d3698fa305",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "AI 抠图",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.43940c9731ca4e48",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "Stable Diffusion 绘图",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.cefb0416621198d0",
+      "type": "HTTP",
+      "category": "AI 文生图",
+      "name": "FLUX 绘图",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.http.0fb81590d20fe886",
+      "type": "HTTP",
+      "category": "其他",
+      "name": "快递查询",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.806d2a71ce1466a4",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "博查 AI 搜索",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.dcf9edbc814621f8",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "智谱 Web Search",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.dc13ca2131216409",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "百度智能搜索",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.30bbd1c9ccb9c3f5",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "Tavily智搜",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.835deb006c73a2f6",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "智谱-网页链接读取",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.a00973e736085258",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "天眼查",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.739cd036134451c0",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "ArXiv 论文搜索",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.c2479b4cfc079fbb",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "Exa 搜索",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.43b72ad294d5bf55",
+      "type": "MCP",
+      "category": "联网搜索",
+      "name": "Fetch网页内容抓取",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.750f98f12249c366",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "Sequential Thinking",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.254eb32b14c9c5a2",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "提示词库",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.144cd52bc7eeee1d",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "天气查询",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.6049f9f756512a62",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "时间服务",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.6100c1ad60711e81",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "EdgeOne Pages 网页部署",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.999a7229a7f5c589",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "可视化图表",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.1ecb3ba10a167e3c",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "高德地图",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.b248f2e01881f536",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "MiniMax",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.8c5dcdcccebaa340",
+      "type": "MCP",
+      "category": "生产力",
+      "name": "水滴信用-企业大数据",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.fa8169494f1d4d1a",
+      "type": "MCP",
+      "category": "其他",
+      "name": "今天吃什么",
+      "paid": false
+    },
+    {
+      "id": "yunrong.plugin.mcp.506d25bb6aa3f46f",
+      "type": "MCP",
+      "category": "其他",
+      "name": "汇率查询",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.e7b1426e1899371b",
+      "type": "MCP",
+      "category": "其他",
+      "name": "老赖查询",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.3a503bda69fba97e",
+      "type": "MCP",
+      "category": "其他",
+      "name": "图书查询",
+      "paid": true
+    },
+    {
+      "id": "yunrong.plugin.mcp.4fae478480fa0080",
+      "type": "MCP",
+      "category": "其他",
+      "name": "股票助手",
+      "paid": true
+    }
+  ]
+}

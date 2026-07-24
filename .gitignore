@@ -1,0 +1,30 @@
+node_modules/
+dist/
+out/
+coverage/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.env
+*.pyc
+*.tsbuildinfo
+apps/api/openapi.json
+packages/generated-api-client/src/schema.d.ts
+
+# Logs & debug output
+*.log
+.desktop-*
+
+# Temp / screenshots
+.tmp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Windows shortcuts (not source)
+*.lnk
+
+# Tooling / agent state
+.workbuddy/

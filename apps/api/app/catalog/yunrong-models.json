@@ -1,0 +1,923 @@
+{
+  "schema": "yoom.yunrong-model-catalog/v1",
+  "sourceDate": "2026-07-01",
+  "models": [
+    {
+      "id": "yunrong.model.5c5abcf915f0c3ca",
+      "provider": "积墨",
+      "name": "JMO-5.4",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.c21596ca6fc3e5be",
+      "provider": "积墨",
+      "name": "JMO-5.1",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.350e6d1485b72cee",
+      "provider": "积墨",
+      "name": "JMO-5.2",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.cd7be512bf2e7368",
+      "provider": "积墨",
+      "name": "JMO-4.1",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.dd3c450a1f3c2c4d",
+      "provider": "积墨",
+      "name": "JMO-5",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.6680ffca100f1858",
+      "provider": "积墨",
+      "name": "JMO-5-mini",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.843ba1aaa300b49b",
+      "provider": "积墨",
+      "name": "JMO-5-nano",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.273e9eca6f15ea17",
+      "provider": "积墨",
+      "name": "JMO-4.1-v",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 7
+    },
+    {
+      "id": "yunrong.model.566e64e94601eeed",
+      "provider": "积墨",
+      "name": "JMO-4.1-mini",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.00a76b70eaac4c77",
+      "provider": "积墨",
+      "name": "JMO-4",
+      "capabilities": ["插件执行"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.03a9d4663ee87dd6",
+      "provider": "积墨",
+      "name": "JMO-4.1-mini-v",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.7e77894c979ae4fd",
+      "provider": "积墨",
+      "name": "JMO-4.1-nano",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.246d803052306d83",
+      "provider": "积墨",
+      "name": "JMO-4o-mini-v",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.f96d61d98635a608",
+      "provider": "积墨",
+      "name": "JMO-4o",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.6ad454243f5d60d0",
+      "provider": "积墨",
+      "name": "JMO-chatgpt-4o",
+      "capabilities": [],
+      "sessionCost": 7
+    },
+    {
+      "id": "yunrong.model.cd451cd84360ff30",
+      "provider": "积墨",
+      "name": "JMO-4o-v",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 7
+    },
+    {
+      "id": "yunrong.model.a2e043aa26dd072e",
+      "provider": "积墨",
+      "name": "JMO-4o-Mini",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.36bf798fe32bab78",
+      "provider": "积墨",
+      "name": "JMO-3.5-Turbo",
+      "capabilities": [],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.3528109ceca296ba",
+      "provider": "智普",
+      "name": "GLM-5",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.b796af5f96d05568",
+      "provider": "智普",
+      "name": "GLM-5-Thinking",
+      "capabilities": ["深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.ea540a0c84fe946c",
+      "provider": "智普",
+      "name": "GLM-4.7",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.aef995a2a7e8403a",
+      "provider": "智普",
+      "name": "GLM-4.7-Thinking",
+      "capabilities": ["深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.1050c5c95c175853",
+      "provider": "智普",
+      "name": "GLM-4.6V",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.901021c80f6cf9b2",
+      "provider": "智普",
+      "name": "GLM-4.6V-Thinking",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.c25c67729068bad6",
+      "provider": "智普",
+      "name": "GLM-4.6",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.4075bd27ba7144c3",
+      "provider": "智普",
+      "name": "GLM-4.6-Thinking",
+      "capabilities": ["深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.206b03401721ce38",
+      "provider": "智普",
+      "name": "GLM-4.5",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.ee634d3f8c98eb5f",
+      "provider": "智普",
+      "name": "GLM-4.5-Thinking",
+      "capabilities": ["深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.c44ec0d9168194b7",
+      "provider": "智普",
+      "name": "GLM-4.5V",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.24ccc986d631cdca",
+      "provider": "智普",
+      "name": "GLM-4.5V-Thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.4512f41d33246b05",
+      "provider": "智普",
+      "name": "GLM-4.5-Air",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.9fd2c555982bdc26",
+      "provider": "智普",
+      "name": "GLM-Zero-Preview",
+      "capabilities": [],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.4d4a533b66fe880c",
+      "provider": "智普",
+      "name": "GLM-Z1-AirX",
+      "capabilities": [],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.e2fa6d9b77f9a903",
+      "provider": "智普",
+      "name": "GLM-Z1-Air",
+      "capabilities": [],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.82498fb38bcb3ec0",
+      "provider": "智普",
+      "name": "GLM-4-Plus",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.bc4b735d73844ab2",
+      "provider": "智普",
+      "name": "GLM-4-Air",
+      "capabilities": ["插件执行"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.9ad9cb1778ee925f",
+      "provider": "智普",
+      "name": "GLM-4-AirX",
+      "capabilities": ["插件执行"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.86dbf1f7db14041c",
+      "provider": "智普",
+      "name": "CogView-3-Plus",
+      "capabilities": ["文生图"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.868225adb8ff6f0d",
+      "provider": "DeepSeek",
+      "name": "DeepSeek-V4-Pro-Thinking",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.b3d11473bc57bf6d",
+      "provider": "DeepSeek",
+      "name": "DeepSeek-V4-Pro",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.daa472a3a949ca9a",
+      "provider": "DeepSeek",
+      "name": "DeepSeek-V4-Flash",
+      "capabilities": ["插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.babdfe22a89120e4",
+      "provider": "DeepSeek",
+      "name": "DeepSeek-V3.2-Thinking",
+      "capabilities": ["深度思考", "插件执行", "交错思考"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.863a39e8c5482c3e",
+      "provider": "DeepSeek",
+      "name": "DeepSeek-V4-Flash-Thinking",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.87b591c85ddc412b",
+      "provider": "DeepSeek",
+      "name": "DeepSeek-V3.2",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.ba44fc1c77c7a860",
+      "provider": "阿里通义",
+      "name": "通义千问3-Max",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.135136f2ba396865",
+      "provider": "阿里通义",
+      "name": "通义千问 3-Max-Thinking",
+      "capabilities": ["深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.e9a77b83c030b77e",
+      "provider": "阿里通义",
+      "name": "Qwen3.5-Plus-Thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.6b2f1a7be561d2b1",
+      "provider": "阿里通义",
+      "name": "Qwen3.6-Plus",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.ca1d5d83afc1efd6",
+      "provider": "阿里通义",
+      "name": "通义千问-Plus",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.c37954c6ad390b25",
+      "provider": "阿里通义",
+      "name": "通义千问-Flash",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.0e14645535f0e18b",
+      "provider": "阿里通义",
+      "name": "通义千问-Flash-超长上下文",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.3574c51051298e00",
+      "provider": "阿里通义",
+      "name": "Qwen3.5-Flash",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.63a6317f7831a3ea",
+      "provider": "阿里通义",
+      "name": "Qwen3.5-Flash-Thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.55e9b482a81d936c",
+      "provider": "阿里通义",
+      "name": "通义千问3-VL-Plus",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.b99b9c3cda55742b",
+      "provider": "阿里通义",
+      "name": "通义千问3-VL-Plus-Thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.bd448a9db695390b",
+      "provider": "阿里通义",
+      "name": "通义千问 3-VL-Flash",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.6db1dce8b73bb42a",
+      "provider": "阿里通义",
+      "name": "Kimi K2.5",
+      "capabilities": ["图片理解", "深度思考", "插件执行"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.c7c115cfd8fb000b",
+      "provider": "阿里通义",
+      "name": "MiniMax-M2.5",
+      "capabilities": ["深度思考", "插件执行"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.61dd5c3938ab6e4b",
+      "provider": "阿里通义",
+      "name": "Qwen3.6-Flash",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.14db6d914959b815",
+      "provider": "阿里通义",
+      "name": "qwen2.5-Max",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.1c0076777f4da3b8",
+      "provider": "阿里通义",
+      "name": "qwen3-235b-a22b-instruct-2507",
+      "capabilities": ["插件执行"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.6cf6611c816a54b5",
+      "provider": "阿里通义",
+      "name": "qwen3-coder-plus",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.787b6e6b320ed50e",
+      "provider": "阿里通义",
+      "name": "qwen3-235b-a22b-thinking-2507",
+      "capabilities": ["深度思考", "插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.1dfdf7f1ca5450a6",
+      "provider": "阿里通义",
+      "name": "通义千问-Plus-Latest",
+      "capabilities": ["插件执行"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.28b78eaf6e52b912",
+      "provider": "阿里通义",
+      "name": "qwen3-235b-a22b",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.64fbcf8cb23276b0",
+      "provider": "阿里通义",
+      "name": "qwen-max-longcontext",
+      "capabilities": [],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.e32ea62184569920",
+      "provider": "阿里通义",
+      "name": "qwen-vl-plus",
+      "capabilities": ["图片理解"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.2959978ab3ea97f4",
+      "provider": "阿里通义",
+      "name": "qwen-vl-max",
+      "capabilities": ["图片理解"],
+      "sessionCost": 7
+    },
+    {
+      "id": "yunrong.model.b0c41e50decc2da9",
+      "provider": "阿里通义",
+      "name": "QWEN/DeepSeek-V3.2",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.71b44f2417c8edf6",
+      "provider": "Google",
+      "name": "Gemini 3 Pro",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.b5c8798424f9e37a",
+      "provider": "Google",
+      "name": "Gemini 3 Flash",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.48b5e3f82622e0ca",
+      "provider": "Google",
+      "name": "Gemini 3.1 Pro 预览版",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.1d99998dceb1832a",
+      "provider": "Google",
+      "name": "Gemini 2.5 Pro",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.2cc131d9514f33b9",
+      "provider": "Google",
+      "name": "Gemini 2.5 Flash",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.8461e22b344ad77c",
+      "provider": "Google",
+      "name": "Gemini 2.5 Flash-Lite",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.bfaced7fc3605c79",
+      "provider": "Anthropic",
+      "name": "Claude Haiku 4.5",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.8d3384d505eda150",
+      "provider": "Anthropic",
+      "name": "Claude Opus 4.6",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 20
+    },
+    {
+      "id": "yunrong.model.87cce641aea2b18d",
+      "provider": "Anthropic",
+      "name": "Claude Sonnet 4.6",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 12
+    },
+    {
+      "id": "yunrong.model.f1cfc5f9045d84b3",
+      "provider": "Anthropic",
+      "name": "Claude Sonnet 4.5",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 12
+    },
+    {
+      "id": "yunrong.model.2c84d41aa9b7e4b2",
+      "provider": "Anthropic",
+      "name": "Claude Opus 4.5",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 20
+    },
+    {
+      "id": "yunrong.model.d3a825a6db05ccb2",
+      "provider": "Anthropic",
+      "name": "Claude Sonnet 4",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 12
+    },
+    {
+      "id": "yunrong.model.ab83411b283bb778",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-2.0-pro-thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.76f769d060e06b81",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-2.0-pro",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.653da174ac405230",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-1.8",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.5c5f72695a85f6b3",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-1.8-Thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.b7c3b02fe7441b79",
+      "provider": "字节豆包",
+      "name": "DeepSeek-V3.2",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.3af65971ed3f9f0b",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-1.6-vision",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.89f6197e297ec56a",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-1.6-vision-Thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.9b1a05f139cca6ac",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-1.6-flash",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "视频理解"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.9425efd2b060eb40",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-1.6-thinking",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "视频理解"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.54074777d45eb77d",
+      "provider": "字节豆包",
+      "name": "Doubao-Seed-1.6",
+      "capabilities": ["图片理解", "插件执行", "视频理解"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.26f02e0890b8b1ba",
+      "provider": "字节豆包",
+      "name": "Kimi-K2",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.0255c59a0621b53c",
+      "provider": "字节豆包",
+      "name": "DeepSeek-V3.1",
+      "capabilities": ["插件执行"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.8e80d1c67cd828df",
+      "provider": "字节豆包",
+      "name": "DeepSeek-V3.1-深度思考",
+      "capabilities": ["插件执行"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.6a60538ceaf7a351",
+      "provider": "字节豆包",
+      "name": "Doubao-1.5-thinking-pro",
+      "capabilities": ["图片理解"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.ee38d40b8af6a04e",
+      "provider": "字节豆包",
+      "name": "Doubao-1.5-pro-32k",
+      "capabilities": ["插件执行"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.56d8752fb7b1c593",
+      "provider": "字节豆包",
+      "name": "doubao-1.5-vision-pro-250328",
+      "capabilities": ["图片理解"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.09c1c57e7a7d7722",
+      "provider": "字节豆包",
+      "name": "Doubao-1.5-pro-256k",
+      "capabilities": [],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.2a67e191ba36fd76",
+      "provider": "字节豆包",
+      "name": "Doubao-1.5-vision-pro-32k",
+      "capabilities": ["图片理解"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.7b0c1f9b1f732ad7",
+      "provider": "字节豆包",
+      "name": "Doubao/DeepSeek-V3-0324",
+      "capabilities": ["插件执行"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.3879c0e7c9c7abea",
+      "provider": "字节豆包",
+      "name": "Doubao/DeepSeek-R1",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.ba2d3b7df63aae2a",
+      "provider": "字节豆包",
+      "name": "Doubao-1.5-lite",
+      "capabilities": [],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.eb974e3c5f60c896",
+      "provider": "月之暗面",
+      "name": "Kimi-K2.6",
+      "capabilities": ["图片理解", "插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.e2b735f6a817f86f",
+      "provider": "月之暗面",
+      "name": "Kimi-K2.6-深度思考",
+      "capabilities": ["图片理解", "深度思考", "插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.59b9ff7b0b0050c9",
+      "provider": "月之暗面",
+      "name": "Kimi-K2.5-深度思考",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.81d3fefeebd33098",
+      "provider": "月之暗面",
+      "name": "Kimi-K2.5",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.95c446e5251ba2b4",
+      "provider": "月之暗面",
+      "name": "Kimi-K2",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.6d14a5bc281d1424",
+      "provider": "月之暗面",
+      "name": "Kimi-K2-深度思考",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.cbf4f2bc652786fc",
+      "provider": "月之暗面",
+      "name": "moonshot-v1-8k",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.1c71ded5f88119b2",
+      "provider": "月之暗面",
+      "name": "moonshot-v1-32k",
+      "capabilities": ["插件执行"],
+      "sessionCost": 25
+    },
+    {
+      "id": "yunrong.model.25bc569966f2b8fc",
+      "provider": "月之暗面",
+      "name": "moonshot-v1-128k",
+      "capabilities": ["插件执行"],
+      "sessionCost": 256
+    },
+    {
+      "id": "yunrong.model.fe6795a511617ff8",
+      "provider": "文心一言",
+      "name": "ERNIE-Lite-8K",
+      "capabilities": [],
+      "sessionCost": 0
+    },
+    {
+      "id": "yunrong.model.61a8e33bd7c6d364",
+      "provider": "文心一言",
+      "name": "ERNIE-Speed-8K",
+      "capabilities": [],
+      "sessionCost": 0
+    },
+    {
+      "id": "yunrong.model.98fe75a4666cc4db",
+      "provider": "文心一言",
+      "name": "ERNIE-4.0-Turbo-8K",
+      "capabilities": [],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.155bd89859d54e3c",
+      "provider": "文心一言",
+      "name": "ERNIE-4.0-8K",
+      "capabilities": [],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.f432540d4be14c0f",
+      "provider": "MiniMax",
+      "name": "MiniMax-M2.5",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.552dc2f210bec674",
+      "provider": "MiniMax",
+      "name": "MiniMax-M2.1",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.2358d7ac20b6c095",
+      "provider": "MiniMax",
+      "name": "MiniMax-M2",
+      "capabilities": ["深度思考", "插件执行", "结构化输出", "交错思考"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.79e9f02b4897e99a",
+      "provider": "硅基流动",
+      "name": "SiliconCloud/DeepSeek-R1 (Pro)",
+      "capabilities": [],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.4b0590fe934f74fd",
+      "provider": "硅基流动",
+      "name": "DeepSeek-V3.2",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.75f010cbbd113adc",
+      "provider": "硅基流动",
+      "name": "Kimi-K2-Thinking",
+      "capabilities": ["插件执行", "结构化输出"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.f664c0da2b301473",
+      "provider": "硅基流动",
+      "name": "SiliconCloud/DeepSeek-V3 (Pro)",
+      "capabilities": ["插件执行"],
+      "sessionCost": 2
+    },
+    {
+      "id": "yunrong.model.79cbfe37a7a2da00",
+      "provider": "硅基流动",
+      "name": "SiliconCloud/QwQ-32B",
+      "capabilities": ["插件执行"],
+      "sessionCost": 1
+    },
+    {
+      "id": "yunrong.model.e8d3e1a69184af19",
+      "provider": "硅基流动",
+      "name": "moonshotai/Kimi-K2",
+      "capabilities": ["插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.cb62f69c00b66d59",
+      "provider": "AIHUB",
+      "name": "Claude Sonnet 4",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 12
+    },
+    {
+      "id": "yunrong.model.7499b4df6c14dace",
+      "provider": "AIHUB",
+      "name": "Claude Sonnet 4.5",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 12
+    },
+    {
+      "id": "yunrong.model.28d9ecd12237ad0d",
+      "provider": "AIHUB",
+      "name": "Claude 3.7 Sonnet",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 12
+    },
+    {
+      "id": "yunrong.model.07a0ca38d94b2bf5",
+      "provider": "AIHUB",
+      "name": "o3",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 5
+    },
+    {
+      "id": "yunrong.model.b9a908b8831099bc",
+      "provider": "AIHUB",
+      "name": "Gemini 2.5 Flash",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 3
+    },
+    {
+      "id": "yunrong.model.970ba3818bdb0d85",
+      "provider": "AIHUB",
+      "name": "Gemini 2.5 Pro",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 10
+    },
+    {
+      "id": "yunrong.model.daa64d00e7273fef",
+      "provider": "其他",
+      "name": "Gemini 2.5 Pro",
+      "capabilities": ["图片理解", "插件执行"],
+      "sessionCost": 10
+    }
+  ]
+}

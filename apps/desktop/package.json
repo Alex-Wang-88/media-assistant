@@ -1,0 +1,38 @@
+{
+  "name": "@yoom/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview"
+  },
+  "dependencies": {
+    "@radix-ui/react-switch": "1.3.5",
+    "@tanstack/react-query": "5.101.4",
+    "@yoom/desktop-contracts": "workspace:*",
+    "@yoom/markdown-schemas": "workspace:*",
+    "chokidar": "5.0.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "zod": "4.4.3",
+    "zustand": "5.0.14"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.4",
+    "electron": "43.2.0",
+    "electron-vite": "5.0.0",
+    "jsdom": "29.1.1",
+    "tailwindcss": "4.3.3",
+    "vite": "8.1.5"
+  }
+}
