@@ -445,16 +445,52 @@ svg {
   box-shadow: 0 0 0 3px #c47a7212;
 }
 
-.messages {
+.messages-shell {
+  position: relative;
   height: 100%;
   min-height: 0;
+  overflow: hidden;
+}
+
+.messages {
+  height: 100%;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   overflow-anchor: none;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
   padding: 42px 32px;
   background: radial-gradient(circle at 50% 30%, #181818 0, transparent 38%), #101010;
+}
+
+.messages::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-scrollbar {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 4px;
+  bottom: 8px;
+  width: 8px;
+  pointer-events: none;
+}
+
+.chat-scrollbar-thumb {
+  width: 6px;
+  min-height: 28px;
+  background: #9a9a9a;
+  border-radius: 999px;
+  opacity: 0.72;
+  pointer-events: auto;
+  touch-action: none;
+  transition: opacity 120ms ease;
+}
+
+.chat-scrollbar-thumb:hover,
+.chat-scrollbar-thumb[data-dragging="true"] {
+  opacity: 1;
 }
 
 .welcome-card {

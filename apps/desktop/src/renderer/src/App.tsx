@@ -1,9 +1,10 @@
 import * as Switch from "@radix-ui/react-switch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Artifact, ChatMessage } from "@yoom/desktop-contracts";
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useChatScroll } from "./chat-scroll";
 import { applyChatEvent, type ConversationMessage, type ConversationToolCall } from "./chat-state";
 import { useUiStore } from "./store";
 
@@ -22,11 +23,18 @@ export function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentRequestFailed, setAgentRequestFailed] = useState(false);
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null);
-  const messagesViewport = useRef<HTMLDivElement>(null);
-  const shouldFollowLatestMessage = useRef(true);
-  const forceLatestMessage = useRef(false);
-  const isProgrammaticScroll = useRef(false);
   const skipNextProjectReset = useRef(false);
+  const {
+    viewportRef: messagesViewport,
+    scrollbarThumbRef,
+    requestScroll: requestLatestMessage,
+    cancelScroll: cancelLatestMessage,
+    handleScroll: handleMessagesScroll,
+    handleUserScrollIntent,
+    handleThumbPointerDown,
+    handleThumbPointerMove,
+    handleThumbPointerUp,
+  } = useChatScroll(conversationMessages);
   const workspace = useQuery({
     queryKey: ["workspace"],
     queryFn: () => window.desktop.workspace.current(),
@@ -91,24 +99,8 @@ export function App() {
     setConversationMessages([]);
     setMessage("");
     setIsStreaming(false);
-    shouldFollowLatestMessage.current = true;
-    forceLatestMessage.current = false;
+    cancelLatestMessage();
   }, [ui.selectedProjectId]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: message layout changes determine whether the viewport should follow the latest content
-  useLayoutEffect(() => {
-    const viewport = messagesViewport.current;
-    if (!viewport) return;
-    if (!forceLatestMessage.current && !shouldFollowLatestMessage.current) return;
-
-    const bottom = Math.max(0, viewport.scrollHeight - viewport.clientHeight);
-    if (Math.abs(viewport.scrollTop - bottom) > 0.5) {
-      isProgrammaticScroll.current = true;
-      viewport.scrollTop = bottom;
-    }
-    shouldFollowLatestMessage.current = true;
-    forceLatestMessage.current = false;
-  }, [conversationMessages]);
 
   const sendMessage = async () => {
     const prompt = message.trim();
@@ -134,7 +126,7 @@ export function App() {
       status: "streaming",
       tools: [],
     };
-    forceLatestMessage.current = true;
+    requestLatestMessage();
     setConversationMessages((current) => [...current, userMessage, assistantMessage]);
     setMessage("");
     setIsStreaming(true);
@@ -344,65 +336,70 @@ export function App() {
             {agentLabels[displayedAgentState]}
           </span>
         </header>
-        <div
-          className="messages"
-          ref={messagesViewport}
-          onScroll={(event) => {
-            const viewport = event.currentTarget;
-            if (isProgrammaticScroll.current) {
-              isProgrammaticScroll.current = false;
-              return;
-            }
-            const distanceFromBottom =
-              viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
-            shouldFollowLatestMessage.current = distanceFromBottom <= 24;
-          }}
-        >
-          {conversationMessages.length === 0 ? (
-            <div className="welcome-card">
-              <span className="welcome-mark">
-                <Icon name="spark" />
-              </span>
-              <h1>今天想完成什么？</h1>
-              <p>直接描述目标、平台和内容。Agent 会选择合适的工具，并将结果保存到当前工作区。</p>
-              <div className="suggestions">
-                <button
-                  type="button"
-                  onClick={() => setMessage("为新品制定一套小红书首发内容策略")}
-                >
-                  <strong>制定首发策略</strong>
-                  <span>为新品规划小红书内容</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMessage("分析我上传的流量数据并给出可验证的实验建议")}
-                >
-                  <strong>分析流量数据</strong>
-                  <span>从数据中发现增长机会</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMessage("写一篇适合微信公众号发布的产品介绍文章")}
-                >
-                  <strong>创作平台文章</strong>
-                  <span>说明平台和主题即可开始</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMessage("根据企业知识库整理一份本周选题清单")}
-                >
-                  <strong>引用企业知识</strong>
-                  <span>基于本地资料生成内容</span>
-                </button>
+        <div className="messages-shell">
+          <div
+            className="messages"
+            ref={messagesViewport}
+            onScroll={handleMessagesScroll}
+            onWheel={handleUserScrollIntent}
+          >
+            {conversationMessages.length === 0 ? (
+              <div className="welcome-card">
+                <span className="welcome-mark">
+                  <Icon name="spark" />
+                </span>
+                <h1>今天想完成什么？</h1>
+                <p>直接描述目标、平台和内容。Agent 会选择合适的工具，并将结果保存到当前工作区。</p>
+                <div className="suggestions">
+                  <button
+                    type="button"
+                    onClick={() => setMessage("为新品制定一套小红书首发内容策略")}
+                  >
+                    <strong>制定首发策略</strong>
+                    <span>为新品规划小红书内容</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMessage("分析我上传的流量数据并给出可验证的实验建议")}
+                  >
+                    <strong>分析流量数据</strong>
+                    <span>从数据中发现增长机会</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMessage("写一篇适合微信公众号发布的产品介绍文章")}
+                  >
+                    <strong>创作平台文章</strong>
+                    <span>说明平台和主题即可开始</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMessage("根据企业知识库整理一份本周选题清单")}
+                  >
+                    <strong>引用企业知识</strong>
+                    <span>基于本地资料生成内容</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="message-list" aria-live="polite">
-              {conversationMessages.map((entry) => (
-                <ChatBubble key={entry.id} message={entry} />
-              ))}
-            </div>
-          )}
+            ) : (
+              <div className="message-list" aria-live="polite">
+                {conversationMessages.map((entry) => (
+                  <ChatBubble key={entry.id} message={entry} />
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="chat-scrollbar" aria-hidden="true">
+            <div
+              className="chat-scrollbar-thumb"
+              ref={scrollbarThumbRef}
+              hidden
+              onPointerDown={handleThumbPointerDown}
+              onPointerMove={handleThumbPointerMove}
+              onPointerUp={handleThumbPointerUp}
+              onPointerCancel={handleThumbPointerUp}
+            />
+          </div>
         </div>
         <div className="composer-wrap">
           <div className="toggles">
@@ -534,7 +531,7 @@ function readableError(error: unknown): string {
     .replace(/^Error:\s*/, "");
 }
 
-function ChatBubble({ message }: { message: ConversationMessage }) {
+const ChatBubble = memo(function ChatBubble({ message }: { message: ConversationMessage }) {
   return (
     <article className={`chat-message ${message.role} ${message.status}`}>
       <header>
@@ -570,7 +567,7 @@ function ChatBubble({ message }: { message: ConversationMessage }) {
       )}
     </article>
   );
-}
+});
 
 function ToolCallStatus({ tool }: { tool: ConversationToolCall }) {
   const labels: Record<ConversationToolCall["status"], string> = {
