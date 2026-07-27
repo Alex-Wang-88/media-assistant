@@ -1,11 +1,18 @@
 import * as Switch from "@radix-ui/react-switch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Artifact, ChatMessage } from "@yoom/desktop-contracts";
-import { memo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import {
+  applyAppearance,
+  resolveAppearance,
+  systemPrefersDark,
+  watchSystemTheme,
+} from "./appearance";
 import { useChatScroll } from "./chat-scroll";
 import { applyChatEvent, type ConversationMessage, type ConversationToolCall } from "./chat-state";
+import { SettingsPanel } from "./SettingsPanel";
 import { useUiStore } from "./store";
 
 function required<T>(value: T | null, message: string): T {
@@ -85,6 +92,15 @@ export function App() {
       ),
     [projects.data, search],
   );
+
+  useLayoutEffect(() => {
+    const apply = (prefersDark = systemPrefersDark()) => {
+      applyAppearance(document.documentElement, resolveAppearance(ui.appearance, prefersDark));
+    };
+    apply();
+    if (ui.appearance.mode !== "system") return;
+    return watchSystemTheme(apply);
+  }, [ui.appearance]);
 
   useEffect(() => {
     if (!ui.selectedProjectId && projects.data?.[0]) ui.selectProject(projects.data[0].id);
@@ -315,7 +331,7 @@ export function App() {
             </span>
             <span>—</span>
           </button>
-          <button type="button">
+          <button type="button" onClick={ui.openSettings}>
             <span className="nav-label">
               <Icon name="settings" /> 设置
             </span>
@@ -520,6 +536,7 @@ export function App() {
           </footer>
         )}
       </aside>
+      <SettingsPanel />
     </main>
   );
 }
