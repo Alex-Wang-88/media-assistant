@@ -67,6 +67,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     request_id: UUID = Field(alias="requestId")
+    session_id: UUID | None = Field(default=None, alias="sessionId")
     project_id: UUID | None = Field(default=None, alias="projectId")
     messages: list[ChatMessage] = Field(min_length=1, max_length=100)
     knowledge_enabled: bool = Field(alias="knowledgeEnabled")

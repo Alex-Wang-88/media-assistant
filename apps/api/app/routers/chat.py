@@ -1,8 +1,7 @@
 import json
 from collections.abc import AsyncIterator
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import ChatProviderEvent, ChatRequest
@@ -12,12 +11,18 @@ from app.providers.chat import ChatProvider
 router = APIRouter(prefix="/v1", tags=["chat"])
 
 
-def chat_provider(request: Request) -> ChatProvider:
-    provider = getattr(request.app.state, "chat_provider", None)
+def chat_provider(request: Request, mode: str = "chat") -> ChatProvider:
+    state_name = "persona_chat_provider" if mode == "persona_setup" else "chat_provider"
+    provider = getattr(request.app.state, state_name, None)
     if provider is None:
+        variables = (
+            "PERSONA_AGENT_SHARE_URL 和 PERSONA_AGENT_API_KEY"
+            if mode == "persona_setup"
+            else "YUNBLOOM_SHARE_URL 和 YUNBLOOM_API_KEY"
+        )
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "AI API 未配置，请设置 YUNBLOOM_SHARE_URL 和 YUNBLOOM_API_KEY",
+            f"AI API 未配置，请设置 {variables}",
         )
     return provider
 
@@ -29,8 +34,10 @@ def encode_event(payload: dict[str, object]) -> str:
 @router.post("/chat/stream")
 async def stream_chat(
     body: ChatRequest,
-    provider: Annotated[ChatProvider, Depends(chat_provider)],
+    request: Request,
 ) -> StreamingResponse:
+    provider = chat_provider(request, body.mode)
+
     async def events() -> AsyncIterator[str]:
         request_id = str(body.request_id)
         yield encode_event({"type": "start", "requestId": request_id})

@@ -515,29 +515,111 @@ svg {
   border-radius: 50%;
 }
 
-.persona-sidebar-meta > span.ready {
+.persona-sidebar-meta.ready > span {
   background: var(--success);
 }
 
-.persona-sidebar-section > button {
+.persona-sidebar-meta.checking > span {
+  background: var(--text-muted);
+}
+
+.persona-sidebar-meta.unavailable > span {
+  background: var(--error);
+}
+
+.persona-sidebar-meta.ready {
+  color: var(--success);
+}
+
+.persona-sidebar-meta.unconfigured {
+  color: var(--warning);
+}
+
+.persona-sidebar-meta.unavailable {
+  color: var(--error);
+}
+
+.persona-sidebar-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.persona-sidebar-buttons > button {
   width: 100%;
   padding: 7px 8px;
-  color: var(--primary-contrast);
-  background: var(--primary);
-  border: 0;
   border-radius: 7px;
   cursor: pointer;
   font-size: 9px;
   font-weight: 600;
 }
 
-.persona-sidebar-section > button:hover:not(:disabled) {
+.persona-sidebar-buttons .persona-sidebar-primary {
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border: 0;
+}
+
+.persona-sidebar-buttons .persona-sidebar-primary:hover:not(:disabled) {
   background: var(--primary-hover);
 }
 
-.persona-sidebar-section > button:disabled {
+.persona-sidebar-buttons .persona-sidebar-delete {
+  display: grid;
+  width: 31px;
+  flex: 0 0 31px;
+  place-items: center;
+  padding: 0;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.persona-sidebar-buttons .persona-sidebar-delete:hover:not(:disabled) {
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 60%, var(--border));
+}
+
+.persona-sidebar-buttons .persona-sidebar-delete svg {
+  width: 13px;
+  height: 13px;
+}
+
+.persona-sidebar-buttons > button:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+.persona-delete-confirm {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid color-mix(in srgb, var(--error) 42%, var(--border));
+  border-radius: 7px;
+  font-size: 9px;
+}
+
+.persona-delete-confirm > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.persona-delete-confirm button {
+  padding: 5px 8px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.persona-delete-confirm button.danger {
+  color: white;
+  background: var(--error);
+  border-color: var(--error);
 }
 
 .sidebar-footer {
@@ -787,7 +869,7 @@ svg {
 }
 
 .persona-rag-empty {
-  max-width: 620px;
+  max-width: 780px;
 }
 
 .persona-rag-build {
@@ -911,6 +993,145 @@ svg {
   opacity: 0.5;
 }
 
+.persona-trigger-actions {
+  display: flex;
+  width: min(760px, 100%);
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 18px auto 0;
+}
+
+.persona-trigger-actions button {
+  min-width: 116px;
+  padding: 9px 14px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.persona-trigger-actions button.primary {
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.persona-trigger-actions button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.persona-trigger-actions button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.persona-question-card {
+  display: grid;
+  width: min(760px, 100%);
+  gap: 12px;
+  margin: 18px auto 0;
+  padding: 15px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.persona-question-card > header strong {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 550;
+}
+
+.persona-question-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.persona-question-options button {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  color: var(--text-muted);
+  text-align: left;
+  background: var(--bg-element);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.persona-question-options button > span {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--primary-contrast);
+  background: transparent;
+  border: 1px solid var(--border-active);
+  border-radius: 50%;
+  font-size: 8px;
+}
+
+.persona-question-options button.selected {
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 8%, var(--bg-element));
+  border-color: var(--primary);
+}
+
+.persona-question-options button.selected > span {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.persona-question-card > input {
+  width: 100%;
+  padding: 10px 11px;
+  color: var(--text);
+  background: var(--composer-bg);
+  border: 1px solid var(--composer-border);
+  border-radius: 8px;
+  outline: none;
+  font-size: 10px;
+}
+
+.persona-question-card > input:focus {
+  border-color: var(--composer-focus-border);
+}
+
+.persona-question-card > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.persona-question-card > footer button {
+  min-width: 76px;
+  padding: 8px 11px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.persona-question-card > footer button.primary {
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.persona-question-card > footer button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
 .persona-setup-composer-label {
   margin-bottom: 7px;
 }
@@ -969,6 +1190,58 @@ svg {
   line-height: 1.55;
 }
 
+.persona-profile-edit-form {
+  display: grid;
+  gap: 10px;
+}
+
+.persona-profile-edit-form > p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.persona-profile-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.persona-profile-edit-grid label {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+
+.persona-profile-edit-grid label > span {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.persona-profile-edit-grid input,
+.persona-profile-edit-grid textarea {
+  width: 100%;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.45;
+  outline: none;
+}
+
+.persona-profile-edit-grid textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+
+.persona-profile-edit-grid input:focus,
+.persona-profile-edit-grid textarea:focus {
+  border-color: var(--composer-focus-border);
+}
+
 .persona-draft-card > footer {
   display: flex;
   justify-content: flex-end;
@@ -992,6 +1265,91 @@ svg {
 }
 
 .persona-draft-card > footer button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.persona-document-editor {
+  display: grid;
+  width: min(820px, 100%);
+  min-height: calc(100% - 24px);
+  margin: 12px auto;
+  padding: 18px;
+  grid-template-rows: auto minmax(360px, 1fr) auto;
+  gap: 12px;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.persona-document-editor > header,
+.persona-document-editor > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.persona-document-editor > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.persona-document-editor > header strong {
+  font-size: 13px;
+}
+
+.persona-document-editor > header small,
+.persona-document-editor > footer span {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.persona-document-editor textarea {
+  width: 100%;
+  min-height: 360px;
+  resize: none;
+  padding: 16px;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  outline: none;
+  font:
+    10px / 1.75 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+}
+
+.persona-document-editor textarea:focus {
+  border-color: var(--composer-focus-border);
+}
+
+.persona-document-editor button {
+  padding: 7px 12px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.persona-document-editor button.primary {
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.persona-document-editor button:disabled {
   cursor: default;
   opacity: 0.55;
 }
@@ -1242,6 +1600,9 @@ svg {
 }
 
 .composer {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   background: var(--composer-bg);
   border: 1px solid var(--composer-border);
@@ -1253,6 +1614,14 @@ svg {
 
 .composer:focus-within {
   border-color: var(--composer-focus-border);
+  box-shadow:
+    0 18px 55px var(--shadow),
+    0 0 0 2px var(--focus-ring);
+}
+
+.composer.drop-active {
+  background: color-mix(in srgb, var(--primary) 7%, var(--composer-bg));
+  border-color: var(--primary);
   box-shadow:
     0 18px 55px var(--shadow),
     0 0 0 2px var(--focus-ring);

@@ -6,12 +6,25 @@ import {
   createProjectInputSchema,
   deleteProjectInputSchema,
   deviceCommandSchema,
+  personaAgentDocumentSchema,
   personaProfileInputSchema,
+  personaRagDroppedFilesSchema,
   personaRagStatusSchema,
   publishStartInputSchema,
 } from "../src";
 
 describe("desktop contracts", () => {
+  it("validates dropped Persona reference files and their total size", () => {
+    expect(
+      personaRagDroppedFilesSchema.parse([{ name: "brand.txt", data: new Uint8Array([1, 2, 3]) }]),
+    ).toHaveLength(1);
+    expect(
+      personaRagDroppedFilesSchema.safeParse([
+        { name: "too-large.bin", data: new Uint8Array(20_000_001) },
+      ]).success,
+    ).toBe(false);
+  });
+
   it("validates detected agent states", () => {
     expect(agentStatusSchema.parse({ state: "ready" })).toEqual({ state: "ready" });
     expect(agentStatusSchema.safeParse({ state: "working" }).success).toBe(false);
@@ -51,6 +64,28 @@ describe("desktop contracts", () => {
     };
     expect(personaProfileInputSchema.safeParse(complete).success).toBe(true);
     expect(personaProfileInputSchema.safeParse({ ...complete, audience: " " }).success).toBe(false);
+  });
+
+  it("validates the completed Persona Agent document", () => {
+    expect(
+      personaAgentDocumentSchema.safeParse({
+        status: "completed",
+        profile: {
+          industry: "餐饮与食品",
+          account_represents: "门店",
+          business_type: "社区咖啡店",
+          offerings: ["手冲咖啡"],
+          target_audiences: ["附近居民"],
+          customer_scenarios: ["周末休闲"],
+          memory_points: ["社区空间"],
+          long_term_topics: ["咖啡知识"],
+          fixed_facts: [],
+          prohibited_content: [],
+        },
+        current_step: "completed",
+        question: null,
+      }).success,
+    ).toBe(true);
   });
 
   it("rejects publishing without explicit approval", () => {

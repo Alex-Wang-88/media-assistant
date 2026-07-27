@@ -1,6 +1,10 @@
 import json
 
-from app.providers.yunbloom_share import parse_share_sse, parse_share_stream_data
+from app.providers.yunbloom_share import (
+    _request_body,  # pyright: ignore[reportPrivateUsage]
+    parse_share_sse,
+    parse_share_stream_data,
+)
 
 
 def event(payload: object) -> str:
@@ -67,3 +71,13 @@ def test_parses_text_delta_for_live_rendering() -> None:
     )
     assert events[0].type == "text-delta"
     assert events[0].delta == "实时"
+
+
+def test_uses_the_provided_conversation_session_id() -> None:
+    body = _request_body(
+        messages=[{"role": "user", "content": "餐饮"}],
+        tools=None,
+        tool_choice=None,
+        session_id="persona-session",
+    )
+    assert body["sessionId"] == "persona-session"

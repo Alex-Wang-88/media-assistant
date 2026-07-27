@@ -29,6 +29,7 @@ export function useChatScroll(messages: readonly unknown[]) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const scrollbarThumbRef = useRef<HTMLDivElement>(null);
   const followsLatest = useRef(true);
+  const immediateScrollRequested = useRef(false);
   const autoScroll = useRef<AutoScroll | null>(null);
   const requestedBottom = useRef<number | null>(null);
   const dragState = useRef<{
@@ -67,14 +68,16 @@ export function useChatScroll(messages: readonly unknown[]) {
     applyThumbGeometry(thumb, geometry);
   }, []);
 
-  const requestScroll = useCallback(() => {
+  const requestScroll = useCallback((immediate = false) => {
     followsLatest.current = true;
+    immediateScrollRequested.current = immediate;
   }, []);
 
   const cancelScroll = useCallback(() => {
     followsLatest.current = false;
     autoScroll.current = null;
     requestedBottom.current = null;
+    immediateScrollRequested.current = false;
   }, []);
 
   const handleScroll = useCallback(() => {
@@ -160,6 +163,7 @@ export function useChatScroll(messages: readonly unknown[]) {
     if (Math.abs(distance) <= BOTTOM_TOLERANCE) {
       autoScroll.current = null;
       requestedBottom.current = null;
+      immediateScrollRequested.current = false;
       updateScrollbar();
       return;
     }
@@ -186,7 +190,9 @@ export function useChatScroll(messages: readonly unknown[]) {
       applyThumbGeometry(thumb, currentGeometry);
     }
     requestedBottom.current = bottom;
-    viewport.scrollTo({ top: bottom, behavior: "smooth" });
+    const behavior = immediateScrollRequested.current ? "auto" : "smooth";
+    immediateScrollRequested.current = false;
+    viewport.scrollTo({ top: bottom, behavior });
   }, [updateScrollbar]);
 
   useEffect(() => {
@@ -221,6 +227,7 @@ export function useChatScroll(messages: readonly unknown[]) {
     if (messages.length === 0) {
       autoScroll.current = null;
       requestedBottom.current = null;
+      immediateScrollRequested.current = false;
       updateScrollbar();
       return;
     }

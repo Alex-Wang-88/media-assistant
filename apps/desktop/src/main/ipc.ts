@@ -8,7 +8,9 @@ import {
   ipcChannels,
   knowledgeSearchInputSchema,
   listOutputsInputSchema,
-  personaProfileInputSchema,
+  personaRagConfirmInputSchema,
+  personaRagDroppedFilesSchema,
+  personaRagSaveDocumentInputSchema,
   previewFileInputSchema,
   publishStartInputSchema,
 } from "@yoom/desktop-contracts";
@@ -45,8 +47,16 @@ export function registerIpc(access: WorkspaceAccess): void {
   });
   ipcMain.handle(ipcChannels.personaRagStatus, () => requireWorkspace(access).personaRagStatus());
   ipcMain.handle(ipcChannels.personaRagConfirm, (_event, raw) =>
-    requireWorkspace(access).buildPersonaRag(personaProfileInputSchema.parse(raw)),
+    requireWorkspace(access).buildPersonaRag(personaRagConfirmInputSchema.parse(raw)),
   );
+  ipcMain.handle(ipcChannels.personaRagReadDocument, () =>
+    requireWorkspace(access).readPersonaDocument(),
+  );
+  ipcMain.handle(ipcChannels.personaRagSaveDocument, (_event, raw) => {
+    const input = personaRagSaveDocumentInputSchema.parse(raw);
+    return requireWorkspace(access).savePersonaDocument(input.content);
+  });
+  ipcMain.handle(ipcChannels.personaRagDelete, () => requireWorkspace(access).deletePersonaRag());
   ipcMain.handle(ipcChannels.personaRagImportFiles, async (event) => {
     const parent = BrowserWindow.fromWebContents(event.sender);
     const options: OpenDialogOptions = {
@@ -61,6 +71,11 @@ export function registerIpc(access: WorkspaceAccess): void {
       names: requireWorkspace(access).importPersonaRagFiles(result.filePaths),
     };
   });
+  ipcMain.handle(ipcChannels.personaRagImportDroppedFiles, (_event, raw) => ({
+    names: requireWorkspace(access).importDroppedPersonaRagFiles(
+      personaRagDroppedFilesSchema.parse(raw),
+    ),
+  }));
   ipcMain.handle(ipcChannels.filesListOutputs, (_event, raw) => {
     const input = listOutputsInputSchema.parse(raw);
     return requireWorkspace(access).listOutputs(input.projectId);
@@ -90,17 +105,18 @@ export function registerIpc(access: WorkspaceAccess): void {
   ipcMain.handle(ipcChannels.chatSend, async (event, raw) => {
     const input = chatSendInputSchema.parse(raw);
     const workspace = requireWorkspace(access);
+    const { includePersonaReferences, ...chatInput } = input;
     const agentInput =
-      input.mode === "persona_setup"
+      chatInput.mode === "persona_setup" && includePersonaReferences
         ? {
-            ...input,
+            ...chatInput,
             personaReferenceContext: workspace.personaRagReferenceContext(),
           }
-        : input;
+        : chatInput;
     await streamChat(agentInput, (streamEvent) => {
       let outgoingEvent = streamEvent;
       if (
-        input.mode === "persona_setup" &&
+        chatInput.mode === "persona_setup" &&
         streamEvent.type === "tool-call" &&
         streamEvent.name === "propose_persona"
       ) {

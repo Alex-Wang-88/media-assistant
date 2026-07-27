@@ -50,7 +50,22 @@ def test_generate_returns_pending_delivery_not_server_file() -> None:
 def test_health_reports_unconfigured_agent(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.delenv("YUNBLOOM_SHARE_URL", raising=False)
     monkeypatch.delenv("YUNBLOOM_API_KEY", raising=False)
+    monkeypatch.delenv("PERSONA_AGENT_SHARE_URL", raising=False)
+    monkeypatch.delenv("PERSONA_AGENT_API_KEY", raising=False)
     with TestClient(main_app) as client:
         response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "agent": "unconfigured"}
+
+
+def test_health_reports_ready_when_persona_agent_is_configured(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("YUNBLOOM_SHARE_URL", raising=False)
+    monkeypatch.delenv("YUNBLOOM_API_KEY", raising=False)
+    monkeypatch.setenv("PERSONA_AGENT_SHARE_URL", "https://persona.test/v2/chat")
+    monkeypatch.setenv("PERSONA_AGENT_API_KEY", "test-key")
+    with TestClient(main_app) as client:
+        response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "agent": "ready"}

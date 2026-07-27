@@ -50,10 +50,60 @@ export const personaProfileInputSchema = z.object({
   contentBoundaries: z.string().trim().min(1).max(10_000),
 });
 export type PersonaProfileInput = z.infer<typeof personaProfileInputSchema>;
+const nullablePersonaValueSchema = z.string().trim().min(1).max(10_000).nullable();
+const personaValueListSchema = z.array(z.string().trim().min(1).max(10_000)).max(1_000);
+export const personaAgentProfileSchema = z.object({
+  industry: nullablePersonaValueSchema,
+  account_represents: nullablePersonaValueSchema,
+  business_type: nullablePersonaValueSchema,
+  offerings: personaValueListSchema,
+  target_audiences: personaValueListSchema,
+  customer_scenarios: personaValueListSchema,
+  memory_points: personaValueListSchema,
+  long_term_topics: personaValueListSchema,
+  fixed_facts: personaValueListSchema,
+  prohibited_content: personaValueListSchema,
+});
+export type PersonaAgentProfile = z.infer<typeof personaAgentProfileSchema>;
+export const personaAgentDocumentSchema = z.object({
+  status: z.literal("completed"),
+  profile: personaAgentProfileSchema,
+  current_step: z.literal("completed"),
+  question: z.null(),
+});
+export type PersonaAgentDocument = z.infer<typeof personaAgentDocumentSchema>;
+export const personaRagConfirmInputSchema = z.union([
+  personaProfileInputSchema,
+  personaAgentDocumentSchema,
+]);
+export type PersonaRagConfirmInput = z.infer<typeof personaRagConfirmInputSchema>;
+export const personaRagDocumentSchema = z.object({
+  path: z.string().min(1),
+  content: z.string().max(2_000_000),
+});
+export type PersonaRagDocument = z.infer<typeof personaRagDocumentSchema>;
+export const personaRagSaveDocumentInputSchema = z.object({
+  content: z.string().trim().min(1).max(2_000_000),
+});
 export const personaRagImportResultSchema = z.object({
   names: z.array(z.string().min(1)),
 });
 export type PersonaRagImportResult = z.infer<typeof personaRagImportResultSchema>;
+export const personaRagDroppedFilesSchema = z
+  .array(
+    z.object({
+      name: z.string().trim().min(1).max(255),
+      data: z.instanceof(Uint8Array).refine((value) => value.byteLength <= 20_000_000, {
+        message: "单个文件不能超过 20 MB",
+      }),
+    }),
+  )
+  .min(1)
+  .max(10)
+  .refine((files) => files.reduce((total, file) => total + file.data.byteLength, 0) <= 50_000_000, {
+    message: "一次上传的文件总大小不能超过 50 MB",
+  });
+export type PersonaRagDroppedFile = z.infer<typeof personaRagDroppedFilesSchema>[number];
 
 export const artifactKindSchema = z.enum([
   "article",
@@ -105,12 +155,14 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export const chatSendInputSchema = z
   .object({
     requestId: z.uuid(),
+    sessionId: z.uuid().optional(),
     projectId: projectIdSchema.optional(),
     messages: z.array(chatMessageSchema).min(1).max(100),
     knowledgeEnabled: z.boolean(),
     strategyEnabled: z.boolean(),
     autoExecute: z.boolean(),
     mode: z.enum(["chat", "persona_setup"]).optional(),
+    includePersonaReferences: z.boolean().optional(),
   })
   .superRefine((value, context) => {
     if (value.mode !== "persona_setup" && !value.projectId) {
@@ -231,8 +283,12 @@ export interface DesktopApi {
   };
   personaRag: {
     status(): Promise<PersonaRagStatus>;
-    confirm(input: PersonaProfileInput): Promise<PersonaRagStatus>;
+    confirm(input: PersonaRagConfirmInput): Promise<PersonaRagStatus>;
+    readDocument(): Promise<PersonaRagDocument>;
+    saveDocument(content: string): Promise<PersonaRagStatus>;
+    delete(): Promise<PersonaRagStatus>;
     importFiles(): Promise<PersonaRagImportResult>;
+    importDroppedFiles(files: PersonaRagDroppedFile[]): Promise<PersonaRagImportResult>;
   };
   files: {
     listOutputs(projectId: string): Promise<Artifact[]>;
@@ -262,7 +318,11 @@ export const ipcChannels = {
   tasksDelete: "tasks:delete",
   personaRagStatus: "persona-rag:status",
   personaRagConfirm: "persona-rag:confirm",
+  personaRagReadDocument: "persona-rag:read-document",
+  personaRagSaveDocument: "persona-rag:save-document",
+  personaRagDelete: "persona-rag:delete",
   personaRagImportFiles: "persona-rag:import-files",
+  personaRagImportDroppedFiles: "persona-rag:import-dropped-files",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",

@@ -1,5 +1,11 @@
 set -e
 
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
+
 test -x apps/api/.venv/bin/python
 test -x apps/desktop/node_modules/.bin/electron-vite
 test -f apps/desktop/node_modules/electron/path.txt

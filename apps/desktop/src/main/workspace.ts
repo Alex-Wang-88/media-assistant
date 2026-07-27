@@ -15,12 +15,16 @@ import {
 } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { inflateRawSync } from "node:zlib";
 import {
   type Artifact,
   artifactSchema,
   type CreateProjectInput,
   type FilePreview,
-  type PersonaProfileInput,
+  type PersonaAgentDocument,
+  type PersonaRagConfirmInput,
+  type PersonaRagDocument,
+  type PersonaRagDroppedFile,
   type PersonaRagStatus,
   type Project,
   projectSchema,
@@ -55,12 +59,13 @@ function now(): string {
   return new Date().toISOString();
 }
 
-function atomicWrite(path: string, content: string): void {
+function atomicWrite(path: string, content: string | Uint8Array): void {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${randomUUID()}.tmp`;
   const descriptor = openSync(temporary, "wx");
   try {
-    writeFileSync(descriptor, content, "utf8");
+    if (typeof content === "string") writeFileSync(descriptor, content, "utf8");
+    else writeFileSync(descriptor, content);
     fsyncSync(descriptor);
   } finally {
     closeSync(descriptor);
@@ -86,6 +91,138 @@ function mediaType(path: string): string {
     ".mp4": "video/mp4",
   };
   return types[extname(path).toLowerCase()] ?? "application/octet-stream";
+}
+
+function decodeXmlText(source: string): string {
+  return source
+    .replace(/<w:tab\b[^>]*\/?>/g, "\t")
+    .replace(/<w:br\b[^>]*\/?>/g, "\n")
+    .replace(/<\/w:p>/g, "\n")
+    .replace(/<\/w:tr>/g, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, value: string) =>
+      String.fromCodePoint(Number.parseInt(value, 16)),
+    )
+    .replace(/&#(\d+);/g, (_match, value: string) =>
+      String.fromCodePoint(Number.parseInt(value, 10)),
+    )
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractDocxText(path: string): string {
+  const archive = readFileSync(path);
+  let endOffset = -1;
+  for (let index = archive.length - 22; index >= Math.max(0, archive.length - 65_557); index -= 1) {
+    if (archive.readUInt32LE(index) === 0x06054b50) {
+      endOffset = index;
+      break;
+    }
+  }
+  if (endOffset < 0) return "";
+  const entryCount = archive.readUInt16LE(endOffset + 10);
+  let offset = archive.readUInt32LE(endOffset + 16);
+  const parts: string[] = [];
+  for (let entry = 0; entry < entryCount && offset + 46 <= archive.length; entry += 1) {
+    if (archive.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = archive.readUInt16LE(offset + 10);
+    const compressedSize = archive.readUInt32LE(offset + 20);
+    const uncompressedSize = archive.readUInt32LE(offset + 24);
+    const nameLength = archive.readUInt16LE(offset + 28);
+    const extraLength = archive.readUInt16LE(offset + 30);
+    const commentLength = archive.readUInt16LE(offset + 32);
+    const localOffset = archive.readUInt32LE(offset + 42);
+    const name = archive.subarray(offset + 46, offset + 46 + nameLength).toString("utf8");
+    const isDocumentPart =
+      name === "word/document.xml" ||
+      /^word\/(?:header|footer|footnotes|endnotes)\d*\.xml$/.test(name);
+    if (
+      isDocumentPart &&
+      uncompressedSize <= 5_000_000 &&
+      localOffset + 30 <= archive.length &&
+      archive.readUInt32LE(localOffset) === 0x04034b50
+    ) {
+      const localNameLength = archive.readUInt16LE(localOffset + 26);
+      const localExtraLength = archive.readUInt16LE(localOffset + 28);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      const compressed = archive.subarray(dataStart, dataStart + compressedSize);
+      try {
+        const xml =
+          method === 0
+            ? compressed.toString("utf8")
+            : method === 8
+              ? inflateRawSync(compressed).toString("utf8")
+              : "";
+        const text = decodeXmlText(xml);
+        if (text) parts.push(text);
+      } catch {
+        // A damaged document remains stored locally but is omitted from the Agent context.
+      }
+    }
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return parts.join("\n\n");
+}
+
+function extractPersonaReferenceText(path: string, limit: number): string {
+  const extension = extname(path).toLowerCase();
+  if ([".md", ".txt", ".csv", ".json", ".yaml", ".yml"].includes(extension)) {
+    return readFileSync(path, "utf8").slice(0, limit);
+  }
+  if (extension === ".docx") return extractDocxText(path).slice(0, limit);
+  return "";
+}
+
+function formatPersonaAgentDocument(document: PersonaAgentDocument): string {
+  const scalar = (value: string | null) => value ?? "未提供";
+  const list = (values: readonly string[]) =>
+    values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : "- 暂无";
+  const profile = document.profile;
+  return [
+    "# 用户画像",
+    "",
+    "> 这是由画像建立对话生成的本地主文件，可直接查看、修改并保存。",
+    "",
+    "## 基本信息",
+    "",
+    `- 所属行业：${scalar(profile.industry)}`,
+    `- 账号主体：${scalar(profile.account_represents)}`,
+    `- 具体业务类型：${scalar(profile.business_type)}`,
+    "",
+    "## 主要产品、服务或内容",
+    "",
+    list(profile.offerings),
+    "",
+    "## 目标人群",
+    "",
+    list(profile.target_audiences),
+    "",
+    "## 客户选择场景",
+    "",
+    list(profile.customer_scenarios),
+    "",
+    "## 希望形成的记忆点",
+    "",
+    list(profile.memory_points),
+    "",
+    "## 长期内容主题",
+    "",
+    list(profile.long_term_topics),
+    "",
+    "## 固定事实",
+    "",
+    list(profile.fixed_facts),
+    "",
+    "## 禁止或需要避免的内容",
+    "",
+    list(profile.prohibited_content),
+    "",
+  ].join("\n");
 }
 
 export class Workspace {
@@ -221,11 +358,18 @@ export class Workspace {
     return join(this.root, "企业知识库", PERSONA_RAG_DIRECTORY);
   }
 
-  buildPersonaRag(input: PersonaProfileInput): PersonaRagStatus {
+  buildPersonaRag(input: PersonaRagConfirmInput): PersonaRagStatus {
+    if ("status" in input) {
+      atomicWrite(
+        join(this.personaRagPath(), PERSONA_FILE_NAME),
+        formatPersonaAgentDocument(input),
+      );
+      return this.personaRagStatus();
+    }
     const persona = [
       "# 品牌核心 Persona",
       "",
-      "> 这是品牌长期设定的主文件，可直接打开修改。执行内容任务时应完整读取。",
+      "> 这是用户画像的本地主文件，可直接查看和修改。",
       "",
       "## 账号主体与业务",
       "",
@@ -252,6 +396,29 @@ export class Workspace {
     return this.personaRagStatus();
   }
 
+  readPersonaDocument(): PersonaRagDocument {
+    const path = join(this.personaRagPath(), PERSONA_FILE_NAME);
+    if (!existsSync(path) || !statSync(path).isFile()) {
+      throw new Error("本地用户画像文件不存在");
+    }
+    return { path, content: readFileSync(path, "utf8") };
+  }
+
+  savePersonaDocument(content: string): PersonaRagStatus {
+    atomicWrite(join(this.personaRagPath(), PERSONA_FILE_NAME), `${content.trimEnd()}\n`);
+    return this.personaRagStatus();
+  }
+
+  deletePersonaRag(): PersonaRagStatus {
+    const path = this.personaRagPath();
+    if (countVisibleFiles(path) === 0) return this.personaRagStatus();
+    const trashRoot = join(this.root, ".yoom", "trash", PERSONA_RAG_DIRECTORY);
+    mkdirSync(trashRoot, { recursive: true });
+    renameSync(path, join(trashRoot, `${Date.now()}__${randomUUID()}`));
+    mkdirSync(path, { recursive: true });
+    return this.personaRagStatus();
+  }
+
   importPersonaRagFiles(sourcePaths: readonly string[]): string[] {
     const destinationRoot = join(this.personaRagPath(), "资料");
     mkdirSync(destinationRoot, { recursive: true });
@@ -260,6 +427,20 @@ export class Workspace {
       if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) continue;
       const destination = nextAvailableFilePath(destinationRoot, basename(sourcePath));
       copyFileSync(sourcePath, destination);
+      imported.push(basename(destination));
+    }
+    return imported;
+  }
+
+  importDroppedPersonaRagFiles(files: readonly PersonaRagDroppedFile[]): string[] {
+    const destinationRoot = join(this.personaRagPath(), "资料");
+    mkdirSync(destinationRoot, { recursive: true });
+    const imported: string[] = [];
+    for (const file of files) {
+      const safeName = basename(file.name);
+      if (!safeName || safeName.startsWith(".")) continue;
+      const destination = nextAvailableFilePath(destinationRoot, safeName);
+      atomicWrite(destination, file.data);
       imported.push(basename(destination));
     }
     return imported;
@@ -279,11 +460,7 @@ export class Workspace {
     for (const path of visibleFilePaths(referencesRoot)) {
       if (remaining <= 0) break;
       const source = relative(referencesRoot, path).replaceAll("\\", "/");
-      const extension = extname(path).toLowerCase();
-      const readable = [".md", ".txt", ".csv", ".json", ".yaml", ".yml"].includes(extension);
-      const content = readable
-        ? readFileSync(path, "utf8").slice(0, Math.min(10_000, remaining))
-        : "";
+      const content = extractPersonaReferenceText(path, Math.min(10_000, remaining));
       const section = content
         ? `[本地参考资料：${source}]\n${content}`
         : `[本地参考文件：${source}，当前格式仅提供文件名]`;

@@ -23,9 +23,17 @@ class FakeChatProvider:
         yield ChatTextDelta(delta="是 426")
 
 
+class FakePersonaProvider:
+    async def stream(self, request: ChatRequest) -> AsyncIterator[ChatProviderEvent]:
+        assert request.mode == "persona_setup"
+        assert request.persona_reference_context == "[本地资料]\n品牌事实"
+        yield ChatTextDelta(delta="Persona 专用 Agent")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.chat_provider = FakeChatProvider()
+    app.state.persona_chat_provider = FakePersonaProvider()
     yield
 
 
@@ -85,3 +93,49 @@ def test_chat_reports_missing_provider_before_streaming() -> None:
         )
     assert response.status_code == 503
     assert "YUNBLOOM_SHARE_URL" in response.json()["detail"]
+
+
+def test_persona_mode_uses_the_dedicated_provider() -> None:
+    app = FastAPI(lifespan=lifespan)
+    app.include_router(router)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/stream",
+            json={
+                "requestId": str(uuid4()),
+                "messages": [{"role": "user", "content": "分析本地资料"}],
+                "knowledgeEnabled": True,
+                "strategyEnabled": False,
+                "autoExecute": False,
+                "mode": "persona_setup",
+                "personaReferenceContext": "[本地资料]\n品牌事实",
+            },
+        )
+
+    assert response.status_code == 200
+    events = parse_events(response.text)
+    assert events[1] == {
+        "type": "text-delta",
+        "delta": "Persona 专用 Agent",
+        "requestId": events[1]["requestId"],
+    }
+
+
+def test_persona_mode_reports_its_own_missing_configuration() -> None:
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as client:
+        response = client.post(
+            "/v1/chat/stream",
+            json={
+                "requestId": str(uuid4()),
+                "messages": [{"role": "user", "content": "开始构建"}],
+                "knowledgeEnabled": True,
+                "strategyEnabled": False,
+                "autoExecute": False,
+                "mode": "persona_setup",
+            },
+        )
+
+    assert response.status_code == 503
+    assert "PERSONA_AGENT_SHARE_URL" in response.json()["detail"]
