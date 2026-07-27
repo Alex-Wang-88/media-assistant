@@ -105,8 +105,14 @@ class YunbloomShareClient:
         messages: list[dict[str, object]],
         tools: list[dict[str, object]] | None = None,
         tool_choice: str | None = None,
+        session_id: str | None = None,
     ) -> AsyncIterator[ChatProviderEvent]:
-        body = _request_body(messages=messages, tools=tools, tool_choice=tool_choice)
+        body = _request_body(
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            session_id=session_id,
+        )
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0))
         emitted = False
@@ -214,10 +220,11 @@ def _request_body(
     messages: list[dict[str, object]],
     tools: list[dict[str, object]] | None,
     tool_choice: str | None,
+    session_id: str | None = None,
 ) -> dict[str, object]:
     body: dict[str, object] = {
         "messages": messages,
-        "sessionId": str(uuid4()),
+        "sessionId": session_id or str(uuid4()),
         "source": "api",
         "extra": {},
     }

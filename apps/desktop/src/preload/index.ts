@@ -6,6 +6,11 @@ import type {
   CreateProjectInput,
   DesktopApi,
   FilePreview,
+  PersonaRagConfirmInput,
+  PersonaRagDocument,
+  PersonaRagDroppedFile,
+  PersonaRagImportResult,
+  PersonaRagStatus,
   Project,
   WorkspaceEntry,
 } from "@yoom/desktop-contracts";
@@ -19,6 +24,14 @@ const channels = {
   workspaceActivate: "workspace:activate",
   tasksCreate: "tasks:create",
   tasksList: "tasks:list",
+  tasksDelete: "tasks:delete",
+  personaRagStatus: "persona-rag:status",
+  personaRagConfirm: "persona-rag:confirm",
+  personaRagReadDocument: "persona-rag:read-document",
+  personaRagSaveDocument: "persona-rag:save-document",
+  personaRagDelete: "persona-rag:delete",
+  personaRagImportFiles: "persona-rag:import-files",
+  personaRagImportDroppedFiles: "persona-rag:import-dropped-files",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",
@@ -80,6 +93,38 @@ const api: DesktopApi = {
         .then((value: unknown) => expectObject<Project>(value)),
     list: () =>
       ipcRenderer.invoke(channels.tasksList).then((value: unknown) => expectArray<Project>(value)),
+    delete: (projectId) =>
+      ipcRenderer.invoke(channels.tasksDelete, { projectId }).then(() => undefined),
+  },
+  personaRag: {
+    status: () =>
+      ipcRenderer
+        .invoke(channels.personaRagStatus)
+        .then((value: unknown) => expectObject<PersonaRagStatus>(value)),
+    confirm: (input: PersonaRagConfirmInput) =>
+      ipcRenderer
+        .invoke(channels.personaRagConfirm, input)
+        .then((value: unknown) => expectObject<PersonaRagStatus>(value)),
+    readDocument: () =>
+      ipcRenderer
+        .invoke(channels.personaRagReadDocument)
+        .then((value: unknown) => expectObject<PersonaRagDocument>(value)),
+    saveDocument: (content: string) =>
+      ipcRenderer
+        .invoke(channels.personaRagSaveDocument, { content })
+        .then((value: unknown) => expectObject<PersonaRagStatus>(value)),
+    delete: () =>
+      ipcRenderer
+        .invoke(channels.personaRagDelete)
+        .then((value: unknown) => expectObject<PersonaRagStatus>(value)),
+    importFiles: () =>
+      ipcRenderer
+        .invoke(channels.personaRagImportFiles)
+        .then((value: unknown) => expectObject<PersonaRagImportResult>(value)),
+    importDroppedFiles: (files: PersonaRagDroppedFile[]) =>
+      ipcRenderer
+        .invoke(channels.personaRagImportDroppedFiles, files)
+        .then((value: unknown) => expectObject<PersonaRagImportResult>(value)),
   },
   files: {
     listOutputs: (projectId) =>

@@ -80,12 +80,22 @@ API 可单独启动：
 uv run --directory apps/api uvicorn app.main:app --reload
 ```
 
-沄荣共享工作流使用服务端环境变量配置，Key 不得进入 Renderer 或提交到仓库：
+仓库原有的共享工作流使用以下服务端环境变量：
 
 ```powershell
 $env:YUNBLOOM_SHARE_URL="https://api.yunbloom.cn/v2/chat/completions/share?shareId=..."
 $env:YUNBLOOM_API_KEY="..."
 ```
+
+Persona 构建使用独立的积墨 Agent 配置，Key 不得进入 Renderer 或提交到仓库：
+
+```powershell
+$env:PERSONA_AGENT_SHARE_URL="https://jimoai-bot-api.xiaohuodui.cn/v2/chat/completions/share?shareId=GCCtWe2hV7RnBfPT"
+$env:PERSONA_AGENT_API_KEY="..."
+```
+
+也可以把以上配置写入仓库根目录的 `.env`。Persona 参考文件先保存到本地工作区，
+由桌面端读取可解析内容，再把整理后的文本作为 Persona Agent 的上下文发送。
 
 共享接口返回 SSE。普通文本会被重组；标准函数调用封装在 `data.content` 的内层
 OpenAI completion JSON 中，由适配器提取。函数只提出调用请求，桌面端仍需校验参数、

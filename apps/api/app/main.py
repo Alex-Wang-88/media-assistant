@@ -30,6 +30,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             base_url=settings.yunrong_base_url,
             session_cookie=settings.yunrong_session_cookie,
         )
+    if settings.persona_agent_share_url and settings.persona_agent_api_key:
+        persona_share_client = YunbloomShareClient(
+            url=settings.persona_agent_share_url,
+            api_key=settings.persona_agent_api_key,
+        )
+        app.state.persona_chat_provider = YunbloomChatProvider(persona_share_client)
     yield
 
 
@@ -46,6 +52,9 @@ app.include_router(chat_router)
 
 @app.get("/health", response_model=HealthResponse)
 async def health(request: Request) -> HealthResponse:
-    if getattr(request.app.state, "chat_provider", None) is not None:
+    if (
+        getattr(request.app.state, "persona_chat_provider", None) is not None
+        or getattr(request.app.state, "chat_provider", None) is not None
+    ):
         return HealthResponse(agent="ready")
     return HealthResponse(agent="unconfigured")

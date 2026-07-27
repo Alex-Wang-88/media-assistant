@@ -12,6 +12,9 @@ export type ConversationMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  modelContent?: string;
+  hidden?: boolean;
+  modelExcluded?: boolean;
   status: "complete" | "streaming" | "error";
   tools: ConversationToolCall[];
   error?: string;
