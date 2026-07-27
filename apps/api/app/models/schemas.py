@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Platform(StrEnum):
@@ -67,11 +67,23 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     request_id: UUID = Field(alias="requestId")
-    project_id: UUID = Field(alias="projectId")
+    project_id: UUID | None = Field(default=None, alias="projectId")
     messages: list[ChatMessage] = Field(min_length=1, max_length=100)
     knowledge_enabled: bool = Field(alias="knowledgeEnabled")
     strategy_enabled: bool = Field(alias="strategyEnabled")
     auto_execute: bool = Field(alias="autoExecute")
+    mode: Literal["chat", "persona_setup"] = "chat"
+    persona_reference_context: str | None = Field(
+        default=None,
+        alias="personaReferenceContext",
+        max_length=50_000,
+    )
+
+    @model_validator(mode="after")
+    def require_project_for_regular_chat(self) -> "ChatRequest":
+        if self.mode == "chat" and self.project_id is None:
+            raise ValueError("普通对话必须指定任务")
+        return self
 
 
 class HealthResponse(BaseModel):

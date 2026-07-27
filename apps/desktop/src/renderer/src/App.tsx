@@ -1,6 +1,6 @@
 import * as Switch from "@radix-ui/react-switch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Artifact, ChatMessage } from "@yoom/desktop-contracts";
+import type { Artifact, ChatMessage, PersonaProfileInput, Project } from "@yoom/desktop-contracts";
 import { memo, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -20,6 +20,56 @@ function required<T>(value: T | null, message: string): T {
   return value;
 }
 
+function personaSetupMessage(
+  role: ConversationMessage["role"],
+  content: string,
+): ConversationMessage {
+  return {
+    id: crypto.randomUUID(),
+    role,
+    content,
+    status: "complete",
+    tools: [],
+  };
+}
+
+function formatPersonaDraft(profile: PersonaProfileInput): string {
+  return [
+    "我已根据当前对话和资料整理出用户画像草稿：",
+    `账号主体与业务：${profile.brandOverview}`,
+    `目标人群：${profile.audience}`,
+    `品牌定位与长期认知：${profile.positioning}`,
+    `固定事实、产品与服务：${profile.fixedFacts}`,
+    `内容边界：${profile.contentBoundaries}`,
+    "请在界面中确认保存，或继续告诉我需要修改的地方。",
+  ].join("\n\n");
+}
+
+function parsePersonaDraft(argumentsText: string): PersonaProfileInput | null {
+  try {
+    const value = JSON.parse(argumentsText) as Record<string, unknown>;
+    const keys: (keyof PersonaProfileInput)[] = [
+      "brandOverview",
+      "audience",
+      "positioning",
+      "fixedFacts",
+      "contentBoundaries",
+    ];
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      keys.some((key) => typeof value[key] !== "string" || !value[key].trim())
+    ) {
+      return null;
+    }
+    return Object.fromEntries(
+      keys.map((key) => [key, (value[key] as string).trim()]),
+    ) as PersonaProfileInput;
+  } catch {
+    return null;
+  }
+}
+
 export function App() {
   const queryClient = useQueryClient();
   const ui = useUiStore();
@@ -30,6 +80,11 @@ export function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [agentRequestFailed, setAgentRequestFailed] = useState(false);
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null);
+  const [pendingDeleteProjectId, setPendingDeleteProjectId] = useState<string | null>(null);
+  const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
+  const [personaSetupOpen, setPersonaSetupOpen] = useState(false);
+  const [personaSetupMessages, setPersonaSetupMessages] = useState<ConversationMessage[]>([]);
+  const [personaDraft, setPersonaDraft] = useState<PersonaProfileInput | null>(null);
   const skipNextProjectReset = useRef(false);
   const {
     viewportRef: messagesViewport,
@@ -49,6 +104,13 @@ export function App() {
   const workspaces = useQuery({
     queryKey: ["workspaces"],
     queryFn: () => window.desktop.workspace.list(),
+  });
+  const personaRag = useQuery({
+    queryKey: ["persona-rag", workspace.data],
+    queryFn: () => window.desktop.personaRag.status(),
+    enabled: Boolean(workspace.data),
+    retry: false,
+    refetchInterval: 1_000,
   });
   const agentStatus = useQuery({
     queryKey: ["agent-status"],
@@ -85,6 +147,58 @@ export function App() {
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
+  const deleteTask = useMutation({
+    mutationFn: (projectId: string) => {
+      const deleteProject = window.desktop.tasks.delete;
+      if (typeof deleteProject !== "function") {
+        throw new Error("应用组件已更新，请完全退出并重新启动应用后再试");
+      }
+      return deleteProject(projectId);
+    },
+    onSuccess: async (_result, projectId) => {
+      setPendingDeleteProjectId(null);
+      setTaskDeleteError(null);
+      queryClient.setQueryData<Project[]>(["projects", workspace.data], (current) =>
+        current?.filter((project) => project.id !== projectId),
+      );
+      if (ui.selectedProjectId === projectId) ui.resetProject();
+      await queryClient.invalidateQueries({ queryKey: ["projects", workspace.data] });
+    },
+    onError: (error) => {
+      setTaskDeleteError(`删除失败：${readableError(error)}`);
+    },
+  });
+  const importPersonaRagFiles = useMutation({
+    mutationFn: () => window.desktop.personaRag.importFiles(),
+    onSuccess: (result) => {
+      if (result.names.length === 0) return;
+      setPersonaDraft(null);
+      setPersonaSetupMessages((current) => [
+        ...current,
+        personaSetupMessage(
+          "assistant",
+          `已上传 ${result.names.length} 个本地资料：${result.names.join("、")}。Agent 会结合资料和当前对话继续判断还缺少什么。`,
+        ),
+      ]);
+      void personaRag.refetch();
+    },
+    onError: (error) => {
+      setPersonaSetupMessages((current) => [
+        ...current,
+        personaSetupMessage("assistant", `资料上传失败：${readableError(error)}`),
+      ]);
+    },
+  });
+  const confirmPersonaRag = useMutation({
+    mutationFn: (profile: PersonaProfileInput) => window.desktop.personaRag.confirm(profile),
+    onSuccess: async () => {
+      await personaRag.refetch();
+      setPersonaSetupOpen(false);
+      setPersonaSetupMessages([]);
+      setPersonaDraft(null);
+      setMessage("");
+    },
+  });
   const visibleProjects = useMemo(
     () =>
       (projects.data ?? []).filter((project) =>
@@ -92,6 +206,90 @@ export function App() {
       ),
     [projects.data, search],
   );
+
+  const sendPersonaAgentMessage = async (
+    prompt: string,
+    showUserMessage = true,
+    previousMessages = personaSetupMessages,
+  ) => {
+    const normalizedPrompt = prompt.trim();
+    if (!normalizedPrompt || isStreaming) return;
+    const requestId = crypto.randomUUID();
+    const assistantId = crypto.randomUUID();
+    const history: ChatMessage[] = previousMessages
+      .filter((entry) => entry.content.trim())
+      .map((entry) => ({ role: entry.role, content: entry.content }));
+    const userEntry = personaSetupMessage("user", normalizedPrompt);
+    const assistantEntry: ConversationMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      status: "streaming",
+      tools: [],
+    };
+    setPersonaSetupMessages((current) => [
+      ...current,
+      ...(showUserMessage ? [userEntry] : []),
+      assistantEntry,
+    ]);
+    if (showUserMessage) setPersonaDraft(null);
+    setMessage("");
+    setIsStreaming(true);
+    let proposedDraft: PersonaProfileInput | null = null;
+    try {
+      await window.desktop.chat.send(
+        {
+          requestId,
+          messages: [...history, { role: "user", content: normalizedPrompt }],
+          knowledgeEnabled: true,
+          strategyEnabled: false,
+          autoExecute: false,
+          mode: "persona_setup",
+        },
+        (event) => {
+          if (
+            event.type === "tool-call" &&
+            event.name === "propose_persona" &&
+            event.status === "completed"
+          ) {
+            proposedDraft = parsePersonaDraft(event.arguments);
+          }
+          setPersonaSetupMessages((current) => applyChatEvent(current, assistantId, event));
+        },
+      );
+      if (proposedDraft) {
+        setPersonaDraft(proposedDraft);
+        setPersonaSetupMessages((current) =>
+          current.map((entry) =>
+            entry.id === assistantId
+              ? { ...entry, content: formatPersonaDraft(proposedDraft as PersonaProfileInput) }
+              : entry,
+          ),
+        );
+      }
+    } catch (error) {
+      const errorMessage = readableError(error);
+      setPersonaSetupMessages((current) =>
+        current.map((entry) =>
+          entry.id === assistantId ? { ...entry, status: "error", error: errorMessage } : entry,
+        ),
+      );
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  const beginPersonaSetup = () => {
+    setPersonaSetupOpen(true);
+    setPersonaSetupMessages([]);
+    setPersonaDraft(null);
+    setMessage("");
+    void sendPersonaAgentMessage(
+      "请开始通过自然对话帮助我建立长期用户画像。先根据现有本地资料判断最需要了解什么，再提出第一个问题。",
+      false,
+      [],
+    );
+  };
 
   useLayoutEffect(() => {
     const apply = (prefersDark = systemPrefersDark()) => {
@@ -119,6 +317,10 @@ export function App() {
   }, [ui.selectedProjectId]);
 
   const sendMessage = async () => {
+    if (personaSetupOpen) {
+      await sendPersonaAgentMessage(message);
+      return;
+    }
     const prompt = message.trim();
     let projectId = ui.selectedProjectId;
     if (!prompt || isStreaming) return;
@@ -304,20 +506,90 @@ export function App() {
         <div className="section-title">最近任务</div>
         <nav className="project-list">
           {visibleProjects.map((project) => (
-            <button
-              type="button"
-              className={ui.selectedProjectId === project.id ? "project active" : "project"}
-              key={project.id}
-              onClick={() => ui.selectProject(project.id)}
-            >
-              <span className={`status ${project.status}`} />
-              <span>
-                <strong>{project.name}</strong>
-                <small>{new Date(project.updatedAt).toLocaleDateString()}</small>
-              </span>
-            </button>
+            <div className="project-row" key={project.id}>
+              <button
+                type="button"
+                className={ui.selectedProjectId === project.id ? "project active" : "project"}
+                onClick={() => {
+                  setPendingDeleteProjectId(null);
+                  ui.selectProject(project.id);
+                }}
+              >
+                <span className={`status ${project.status}`} />
+                <span>
+                  <strong>{project.name}</strong>
+                  <small>{new Date(project.updatedAt).toLocaleDateString()}</small>
+                </span>
+              </button>
+              {pendingDeleteProjectId === project.id ? (
+                <span className="project-delete-confirm">
+                  <button
+                    type="button"
+                    disabled={deleteTask.isPending || isStreaming}
+                    onClick={() => deleteTask.mutate(project.id)}
+                  >
+                    确认删除
+                  </button>
+                  <button type="button" onClick={() => setPendingDeleteProjectId(null)}>
+                    取消
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="project-delete"
+                  aria-label={`删除最近任务“${project.name}”`}
+                  disabled={isStreaming}
+                  onClick={() => {
+                    setTaskDeleteError(null);
+                    setPendingDeleteProjectId(project.id);
+                  }}
+                >
+                  <Icon name="trash" />
+                </button>
+              )}
+            </div>
           ))}
+          {taskDeleteError ? (
+            <p className="project-delete-error" role="alert">
+              {taskDeleteError}
+            </p>
+          ) : null}
         </nav>
+        <section className="persona-sidebar-section" aria-labelledby="persona-sidebar-title">
+          <header>
+            <span className="persona-sidebar-icon">
+              <Icon name="user" />
+            </span>
+            <span>
+              <strong id="persona-sidebar-title">用户画像</strong>
+              <small>
+                {personaRag.isError
+                  ? "状态读取失败"
+                  : personaRag.data?.ready
+                    ? "画像已就绪"
+                    : "尚未构建"}
+              </small>
+            </span>
+          </header>
+          <div className="persona-sidebar-meta">
+            <span className={personaRag.data?.ready ? "ready" : ""} />
+            {personaRag.data?.ready
+              ? `${personaRag.data.fileCount} 个本地文件`
+              : "Agent 动态提问，参考资料可选"}
+          </div>
+          <button
+            type="button"
+            disabled={personaRag.isPending || isStreaming || personaSetupOpen}
+            onClick={beginPersonaSetup}
+          >
+            {personaSetupOpen
+              ? "正在构建"
+              : personaRag.data?.ready
+                ? "查看或更新画像"
+                : "开始构建画像"}
+          </button>
+        </section>
         <div className="sidebar-footer">
           <button type="button">
             <span className="nav-label">
@@ -359,7 +631,92 @@ export function App() {
             onScroll={handleMessagesScroll}
             onWheel={handleUserScrollIntent}
           >
-            {conversationMessages.length === 0 ? (
+            {conversationMessages.length === 0 && personaSetupOpen ? (
+              <div className="persona-setup-conversation">
+                <header>
+                  <div>
+                    <strong>建立用户画像</strong>
+                    <small>Agent 会根据已有回答和本地资料动态追问</small>
+                  </div>
+                  <div className="persona-setup-actions">
+                    <button
+                      type="button"
+                      disabled={importPersonaRagFiles.isPending}
+                      onClick={() => importPersonaRagFiles.mutate()}
+                    >
+                      {importPersonaRagFiles.isPending ? "正在上传…" : "上传参考资料"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isStreaming}
+                      onClick={() => {
+                        setPersonaSetupOpen(false);
+                        setPersonaSetupMessages([]);
+                        setPersonaDraft(null);
+                        setMessage("");
+                      }}
+                    >
+                      暂时退出
+                    </button>
+                  </div>
+                </header>
+                <div className="message-list" aria-live="polite">
+                  {personaSetupMessages.map((entry) => (
+                    <ChatBubble key={entry.id} message={entry} />
+                  ))}
+                </div>
+                {personaDraft ? (
+                  <article className="persona-draft-card">
+                    <header>
+                      <div>
+                        <strong>用户画像草稿待确认</strong>
+                        <small>确认前不会写入本地主文件</small>
+                      </div>
+                    </header>
+                    <dl>
+                      <div>
+                        <dt>账号主体与业务</dt>
+                        <dd>{personaDraft.brandOverview}</dd>
+                      </div>
+                      <div>
+                        <dt>目标人群</dt>
+                        <dd>{personaDraft.audience}</dd>
+                      </div>
+                      <div>
+                        <dt>定位与长期认知</dt>
+                        <dd>{personaDraft.positioning}</dd>
+                      </div>
+                      <div>
+                        <dt>固定事实与服务</dt>
+                        <dd>{personaDraft.fixedFacts}</dd>
+                      </div>
+                      <div>
+                        <dt>内容边界</dt>
+                        <dd>{personaDraft.contentBoundaries}</dd>
+                      </div>
+                    </dl>
+                    {confirmPersonaRag.isError ? (
+                      <p className="persona-rag-error" role="alert">
+                        保存失败：{readableError(confirmPersonaRag.error)}
+                      </p>
+                    ) : null}
+                    <footer>
+                      <button type="button" onClick={() => setPersonaDraft(null)}>
+                        继续修改
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={confirmPersonaRag.isPending}
+                        onClick={() => confirmPersonaRag.mutate(personaDraft)}
+                      >
+                        {confirmPersonaRag.isPending ? "正在保存…" : "确认并保存"}
+                      </button>
+                    </footer>
+                  </article>
+                ) : null}
+              </div>
+            ) : conversationMessages.length === 0 && personaRag.data?.ready ? (
               <div className="welcome-card">
                 <span className="welcome-mark">
                   <Icon name="spark" />
@@ -397,6 +754,38 @@ export function App() {
                   </button>
                 </div>
               </div>
+            ) : conversationMessages.length === 0 ? (
+              <div className="welcome-card persona-rag-empty">
+                <span className="welcome-mark">
+                  <Icon name="spark" />
+                </span>
+                <h1>先建立用户画像</h1>
+                <p>
+                  Agent 会结合你提供的内容和可选参考资料，自主判断还缺少什么，并且只追问必要信息。
+                  画像草稿需要你确认后才会保存到本地。
+                </p>
+                <button
+                  type="button"
+                  className="persona-rag-build"
+                  disabled={personaRag.isPending}
+                  onClick={beginPersonaSetup}
+                >
+                  <Icon name="spark" />
+                  <span>
+                    <strong>与 Agent 对话建立画像</strong>
+                    <small>可以直接开始，也可以随时上传参考资料</small>
+                  </span>
+                </button>
+                {personaRag.isError ? (
+                  <p className="persona-rag-error" role="alert">
+                    {readableError(personaRag.error)}
+                  </p>
+                ) : (
+                  <p className="persona-rag-status" role="status">
+                    用户画像确认保存后会显示四个快捷入口；画像文件被删除后会回到这里。
+                  </p>
+                )}
+              </div>
             ) : (
               <div className="message-list" aria-live="polite">
                 {conversationMessages.map((entry) => (
@@ -418,24 +807,30 @@ export function App() {
           </div>
         </div>
         <div className="composer-wrap">
-          <div className="toggles">
-            <Toggle
-              label="企业知识"
-              checked={ui.knowledgeEnabled}
-              onChange={(v) => ui.setToggle("knowledgeEnabled", v)}
-            />
-            <Toggle
-              label="流量策略"
-              checked={ui.strategyEnabled}
-              onChange={(v) => ui.setToggle("strategyEnabled", v)}
-            />
-            <Toggle
-              label="自动执行"
-              checked={ui.autoExecute}
-              onChange={(v) => ui.setToggle("autoExecute", v)}
-              warning
-            />
-          </div>
+          {personaSetupOpen ? (
+            <div className="persona-setup-composer-label">
+              正在建立用户画像 · 可随时上传补充资料
+            </div>
+          ) : (
+            <div className="toggles">
+              <Toggle
+                label="企业知识"
+                checked={ui.knowledgeEnabled}
+                onChange={(v) => ui.setToggle("knowledgeEnabled", v)}
+              />
+              <Toggle
+                label="流量策略"
+                checked={ui.strategyEnabled}
+                onChange={(v) => ui.setToggle("strategyEnabled", v)}
+              />
+              <Toggle
+                label="自动执行"
+                checked={ui.autoExecute}
+                onChange={(v) => ui.setToggle("autoExecute", v)}
+                warning
+              />
+            </div>
+          )}
           <div className="composer">
             <textarea
               value={message}
@@ -446,14 +841,28 @@ export function App() {
                   void sendMessage();
                 }
               }}
-              placeholder="告诉 Agent 你想做什么…"
+              placeholder={personaSetupOpen ? "回答上方问题…" : "告诉 Agent 你想做什么…"}
+              disabled={personaSetupOpen && isStreaming}
             />
             <div className="composer-actions">
-              <button type="button" title="添加附件" className="attach">
+              <button
+                type="button"
+                title={personaSetupOpen ? "上传画像参考资料" : "添加附件"}
+                aria-label={personaSetupOpen ? "上传画像参考资料" : "添加附件"}
+                className="attach"
+                disabled={personaSetupOpen && importPersonaRagFiles.isPending}
+                onClick={() => {
+                  if (personaSetupOpen) importPersonaRagFiles.mutate();
+                }}
+              >
                 <Icon name="paperclip" />
               </button>
               <span className="composer-note">
-                {ui.selectedProjectId ? "支持图片、CSV、XLSX、PDF" : "首次发送将自动创建任务"}
+                {personaSetupOpen
+                  ? "支持一次选择多个本地资料"
+                  : ui.selectedProjectId
+                    ? "支持图片、CSV、XLSX、PDF"
+                    : "首次发送将自动创建任务"}
               </span>
               <button
                 className="send"
@@ -689,7 +1098,9 @@ type IconName =
   | "paperclip"
   | "arrow-up"
   | "refresh"
-  | "file";
+  | "file"
+  | "trash"
+  | "user";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, ReactNode> = {
@@ -709,6 +1120,8 @@ function Icon({ name }: { name: IconName }) {
     "arrow-up": <path d="m6 11 6-6 6 6M12 5v14" />,
     refresh: <path d="M20 6v5h-5M4 18v-5h5m10-2a7 7 0 0 0-12-4L4 11m16 2-3 4a7 7 0 0 1-12-4" />,
     file: <path d="M7 3h7l4 4v14H7V3Zm7 0v5h5M10 13h5m-5 4h5" />,
+    trash: <path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" />,
+    user: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" />,
   };
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">

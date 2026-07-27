@@ -3,15 +3,18 @@ import {
   activateWorkspaceInputSchema,
   chatSendInputSchema,
   createProjectInputSchema,
+  deleteProjectInputSchema,
   fileActionInputSchema,
   ipcChannels,
   knowledgeSearchInputSchema,
   listOutputsInputSchema,
+  personaProfileInputSchema,
   previewFileInputSchema,
   publishStartInputSchema,
 } from "@yoom/desktop-contracts";
-import { type BrowserWindow, ipcMain, shell } from "electron";
+import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions, shell } from "electron";
 import { getAgentStatus, streamChat } from "./chat-client";
+import { validatePersonaProposal } from "./persona-agent";
 import type { Workspace } from "./workspace";
 
 type WorkspaceAccess = {
@@ -36,6 +39,28 @@ export function registerIpc(access: WorkspaceAccess): void {
     return requireWorkspace(access).createProject(createProjectInputSchema.parse(raw));
   });
   ipcMain.handle(ipcChannels.tasksList, () => requireWorkspace(access).listProjects());
+  ipcMain.handle(ipcChannels.tasksDelete, (_event, raw) => {
+    const input = deleteProjectInputSchema.parse(raw);
+    requireWorkspace(access).deleteProject(input.projectId);
+  });
+  ipcMain.handle(ipcChannels.personaRagStatus, () => requireWorkspace(access).personaRagStatus());
+  ipcMain.handle(ipcChannels.personaRagConfirm, (_event, raw) =>
+    requireWorkspace(access).buildPersonaRag(personaProfileInputSchema.parse(raw)),
+  );
+  ipcMain.handle(ipcChannels.personaRagImportFiles, async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const options: OpenDialogOptions = {
+      title: "选择 Persona RAG 参考资料",
+      properties: ["openFile", "multiSelections"],
+    };
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled) return { names: [] };
+    return {
+      names: requireWorkspace(access).importPersonaRagFiles(result.filePaths),
+    };
+  });
   ipcMain.handle(ipcChannels.filesListOutputs, (_event, raw) => {
     const input = listOutputsInputSchema.parse(raw);
     return requireWorkspace(access).listOutputs(input.projectId);
@@ -64,8 +89,24 @@ export function registerIpc(access: WorkspaceAccess): void {
   ipcMain.handle(ipcChannels.chatStatus, () => getAgentStatus());
   ipcMain.handle(ipcChannels.chatSend, async (event, raw) => {
     const input = chatSendInputSchema.parse(raw);
-    await streamChat(input, (streamEvent) => {
-      if (!event.sender.isDestroyed()) event.sender.send(ipcChannels.chatEvent, streamEvent);
+    const workspace = requireWorkspace(access);
+    const agentInput =
+      input.mode === "persona_setup"
+        ? {
+            ...input,
+            personaReferenceContext: workspace.personaRagReferenceContext(),
+          }
+        : input;
+    await streamChat(agentInput, (streamEvent) => {
+      let outgoingEvent = streamEvent;
+      if (
+        input.mode === "persona_setup" &&
+        streamEvent.type === "tool-call" &&
+        streamEvent.name === "propose_persona"
+      ) {
+        outgoingEvent = validatePersonaProposal(streamEvent);
+      }
+      if (!event.sender.isDestroyed()) event.sender.send(ipcChannels.chatEvent, outgoingEvent);
     });
   });
   ipcMain.handle(ipcChannels.publishStart, (_event, raw) => {

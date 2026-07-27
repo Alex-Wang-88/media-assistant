@@ -37,6 +37,7 @@ type UiState = {
   setThemeMode(mode: AppearanceMode): void;
   chooseThemePreset(id: ThemePresetId): void;
   chooseSavedThemePreset(id: string): void;
+  deleteSavedThemePreset(id: string): void;
   customizeTheme(scheme: ColorScheme, patch: Partial<ThemeColors>): void;
   saveThemeCustomization(name: string): void;
   resetThemeCustomization(): void;
@@ -104,6 +105,21 @@ export const useUiStore = create<UiState>((set) => ({
         activeSavedThemeId: preset.id,
         appearanceSaveError: saved ? null : "外观设置暂时无法保存，重新启动后可能恢复原值。",
         appearanceSaveNotice: null,
+      };
+    }),
+  deleteSavedThemePreset: (id) =>
+    set((state) => {
+      const preset = state.savedThemePresets.find((entry) => entry.id === id);
+      if (!preset) return state;
+      const savedThemePresets = state.savedThemePresets.filter((entry) => entry.id !== id);
+      const saved = storeSavedThemePresets(savedThemePresets);
+      return {
+        savedThemePresets,
+        activeSavedThemeId: state.activeSavedThemeId === id ? null : state.activeSavedThemeId,
+        appearanceSaveError: saved
+          ? null
+          : "自定义预设已从当前界面删除，但暂时无法保存，重新启动后可能恢复。",
+        appearanceSaveNotice: saved ? `已删除“${preset.name}”预设。` : null,
       };
     }),
   customizeTheme: (scheme, patch) =>

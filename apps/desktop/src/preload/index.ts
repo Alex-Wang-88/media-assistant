@@ -6,6 +6,9 @@ import type {
   CreateProjectInput,
   DesktopApi,
   FilePreview,
+  PersonaProfileInput,
+  PersonaRagImportResult,
+  PersonaRagStatus,
   Project,
   WorkspaceEntry,
 } from "@yoom/desktop-contracts";
@@ -19,6 +22,10 @@ const channels = {
   workspaceActivate: "workspace:activate",
   tasksCreate: "tasks:create",
   tasksList: "tasks:list",
+  tasksDelete: "tasks:delete",
+  personaRagStatus: "persona-rag:status",
+  personaRagConfirm: "persona-rag:confirm",
+  personaRagImportFiles: "persona-rag:import-files",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",
@@ -80,6 +87,22 @@ const api: DesktopApi = {
         .then((value: unknown) => expectObject<Project>(value)),
     list: () =>
       ipcRenderer.invoke(channels.tasksList).then((value: unknown) => expectArray<Project>(value)),
+    delete: (projectId) =>
+      ipcRenderer.invoke(channels.tasksDelete, { projectId }).then(() => undefined),
+  },
+  personaRag: {
+    status: () =>
+      ipcRenderer
+        .invoke(channels.personaRagStatus)
+        .then((value: unknown) => expectObject<PersonaRagStatus>(value)),
+    confirm: (input: PersonaProfileInput) =>
+      ipcRenderer
+        .invoke(channels.personaRagConfirm, input)
+        .then((value: unknown) => expectObject<PersonaRagStatus>(value)),
+    importFiles: () =>
+      ipcRenderer
+        .invoke(channels.personaRagImportFiles)
+        .then((value: unknown) => expectObject<PersonaRagImportResult>(value)),
   },
   files: {
     listOutputs: (projectId) =>

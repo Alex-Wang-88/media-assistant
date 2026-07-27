@@ -152,6 +152,7 @@ export function SettingsPanel() {
   const savedThemePresets = useUiStore((state) => state.savedThemePresets);
   const activeSavedThemeId = useUiStore((state) => state.activeSavedThemeId);
   const chooseSavedThemePreset = useUiStore((state) => state.chooseSavedThemePreset);
+  const deleteSavedThemePreset = useUiStore((state) => state.deleteSavedThemePreset);
   const customizeTheme = useUiStore((state) => state.customizeTheme);
   const saveThemeCustomization = useUiStore((state) => state.saveThemeCustomization);
   const resetThemeCustomization = useUiStore((state) => state.resetThemeCustomization);
@@ -160,6 +161,7 @@ export function SettingsPanel() {
   const [prefersDark, setPrefersDark] = useState(() => systemPrefersDark());
   const [openPicker, setOpenPicker] = useState<EditableColor | null>(null);
   const [themeName, setThemeName] = useState("");
+  const [pendingDeleteThemeId, setPendingDeleteThemeId] = useState<string | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const doneButtonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -192,6 +194,7 @@ export function SettingsPanel() {
     setBackgroundDraft(resolved.background);
     setForegroundDraft(resolved.foreground);
     setOpenPicker(null);
+    setPendingDeleteThemeId(null);
   }, [resolved.background, resolved.foreground, settingsOpen]);
 
   useEffect(() => {
@@ -371,36 +374,65 @@ export function SettingsPanel() {
                   scheme === "dark",
                 );
                 return (
-                  <label className="theme-card saved-theme-card" key={preset.id}>
-                    <input
-                      className="theme-card-radio"
-                      type="radio"
-                      name={presetGroupName}
-                      value={preset.id}
-                      checked={activeSavedThemeId === preset.id}
-                      onChange={() => {
-                        setThemeName(preset.name);
-                        chooseSavedThemePreset(preset.id);
-                      }}
-                    />
-                    <span
-                      className="theme-card-palette"
-                      style={{
-                        backgroundColor: presetColors.background,
-                        color: presetColors.foreground,
-                      }}
-                      aria-hidden="true"
-                    >
-                      <span
-                        className="theme-swatch"
-                        style={{ backgroundColor: presetColors.foreground }}
+                  <div className="saved-theme-card-wrap" key={preset.id}>
+                    <label className="theme-card saved-theme-card">
+                      <input
+                        className="theme-card-radio"
+                        type="radio"
+                        name={presetGroupName}
+                        value={preset.id}
+                        checked={activeSavedThemeId === preset.id}
+                        onChange={() => {
+                          setPendingDeleteThemeId(null);
+                          setThemeName(preset.name);
+                          chooseSavedThemePreset(preset.id);
+                        }}
                       />
-                    </span>
-                    <span className="theme-card-copy">
-                      <strong>{preset.name}</strong>
-                      <small>自定义预设</small>
-                    </span>
-                  </label>
+                      <span
+                        className="theme-card-palette"
+                        style={{
+                          backgroundColor: presetColors.background,
+                          color: presetColors.foreground,
+                        }}
+                        aria-hidden="true"
+                      >
+                        <span
+                          className="theme-swatch"
+                          style={{ backgroundColor: presetColors.foreground }}
+                        />
+                      </span>
+                      <span className="theme-card-copy">
+                        <strong>{preset.name}</strong>
+                        <small>自定义预设</small>
+                      </span>
+                    </label>
+                    {pendingDeleteThemeId === preset.id ? (
+                      <span className="saved-theme-delete-confirm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (activeSavedThemeId === preset.id) setThemeName("");
+                            deleteSavedThemePreset(preset.id);
+                            setPendingDeleteThemeId(null);
+                          }}
+                        >
+                          确认删除
+                        </button>
+                        <button type="button" onClick={() => setPendingDeleteThemeId(null)}>
+                          取消
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="saved-theme-delete"
+                        aria-label={`删除自定义预设“${preset.name}”`}
+                        onClick={() => setPendingDeleteThemeId(preset.id)}
+                      >
+                        删除
+                      </button>
+                    )}
+                  </div>
                 );
               })}
             </div>

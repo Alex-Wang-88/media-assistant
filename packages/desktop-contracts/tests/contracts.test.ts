@@ -4,7 +4,10 @@ import {
   chatSendInputSchema,
   chatStreamEventSchema,
   createProjectInputSchema,
+  deleteProjectInputSchema,
   deviceCommandSchema,
+  personaProfileInputSchema,
+  personaRagStatusSchema,
   publishStartInputSchema,
 } from "../src";
 
@@ -16,6 +19,38 @@ describe("desktop contracts", () => {
 
   it("rejects blank task names", () => {
     expect(createProjectInputSchema.safeParse({ name: " " }).success).toBe(false);
+  });
+
+  it("requires a valid task id for deletion", () => {
+    expect(deleteProjectInputSchema.safeParse({ projectId: crypto.randomUUID() }).success).toBe(
+      true,
+    );
+    expect(deleteProjectInputSchema.safeParse({ projectId: "../任务" }).success).toBe(false);
+  });
+
+  it("validates local Persona RAG readiness", () => {
+    expect(
+      personaRagStatusSchema.parse({
+        ready: true,
+        fileCount: 1,
+        path: "/workspace/企业知识库/用户Persona RAG",
+      }),
+    ).toMatchObject({ ready: true, fileCount: 1 });
+    expect(personaRagStatusSchema.safeParse({ ready: true, fileCount: -1, path: "" }).success).toBe(
+      false,
+    );
+  });
+
+  it("requires every core Persona answer before building", () => {
+    const complete = {
+      brandOverview: "社区咖啡店",
+      audience: "附近居民与上班族",
+      positioning: "手冲咖啡与社区空间",
+      fixedFacts: "营业时间为每天 8:00 至 20:00",
+      contentBoundaries: "不宣传未经确认的折扣",
+    };
+    expect(personaProfileInputSchema.safeParse(complete).success).toBe(true);
+    expect(personaProfileInputSchema.safeParse({ ...complete, audience: " " }).success).toBe(false);
   });
 
   it("rejects publishing without explicit approval", () => {
@@ -52,6 +87,25 @@ describe("desktop contracts", () => {
         autoExecute: false,
       }).success,
     ).toBe(true);
+    expect(
+      chatSendInputSchema.safeParse({
+        requestId,
+        messages: [{ role: "user", content: "开始构建 Persona" }],
+        knowledgeEnabled: true,
+        strategyEnabled: false,
+        autoExecute: false,
+        mode: "persona_setup",
+      }).success,
+    ).toBe(true);
+    expect(
+      chatSendInputSchema.safeParse({
+        requestId,
+        messages: [{ role: "user", content: "普通对话" }],
+        knowledgeEnabled: true,
+        strategyEnabled: false,
+        autoExecute: false,
+      }).success,
+    ).toBe(false);
     expect(
       chatStreamEventSchema.safeParse({
         type: "text-delta",

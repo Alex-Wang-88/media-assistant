@@ -297,8 +297,13 @@ svg {
 }
 
 .project-list {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+}
+
+.project-row {
+  position: relative;
 }
 
 .project {
@@ -306,7 +311,7 @@ svg {
   grid-template-columns: 7px minmax(0, 1fr);
   width: 100%;
   gap: 8px;
-  padding: 9px 9px;
+  padding: 9px 34px 9px 9px;
   text-align: left;
   background: transparent;
   border: 0;
@@ -349,6 +354,80 @@ svg {
   font-size: 9px;
 }
 
+.project-delete,
+.project-delete-confirm {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+}
+
+.project-delete {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  color: var(--text-faint);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.project-row:hover .project-delete,
+.project-delete:focus-visible {
+  opacity: 1;
+}
+
+.project-delete:hover:not(:disabled) {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+}
+
+.project-delete:disabled {
+  cursor: default;
+}
+
+.project-delete svg {
+  width: 13px;
+  height: 13px;
+}
+
+.project-delete-confirm {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.project-delete-confirm button {
+  padding: 3px 5px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.project-delete-confirm button:first-child {
+  color: var(--error);
+}
+
+.project-delete-confirm button:hover:not(:disabled) {
+  background: var(--project-hover-bg);
+}
+
+.project-delete-error {
+  margin: 6px 9px;
+  color: var(--error);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
 .status {
   width: 6px;
   height: 6px;
@@ -370,10 +449,101 @@ svg {
   background: var(--success);
 }
 
+.persona-sidebar-section {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 9px;
+  margin: 10px 2px;
+  padding: 11px;
+  background: var(--bg-element);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+}
+
+.persona-sidebar-section > header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.persona-sidebar-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-radius: 7px;
+}
+
+.persona-sidebar-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.persona-sidebar-section > header > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.persona-sidebar-section strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 580;
+}
+
+.persona-sidebar-section small,
+.persona-sidebar-meta {
+  color: var(--text-dim);
+  font-size: 8px;
+}
+
+.persona-sidebar-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.persona-sidebar-meta > span {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  background: var(--warning);
+  border-radius: 50%;
+}
+
+.persona-sidebar-meta > span.ready {
+  background: var(--success);
+}
+
+.persona-sidebar-section > button {
+  width: 100%;
+  padding: 7px 8px;
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.persona-sidebar-section > button:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.persona-sidebar-section > button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .sidebar-footer {
   display: grid;
   gap: 1px;
-  margin-top: auto;
+  margin-top: 0;
   padding-top: 9px;
   border-top: 1px solid var(--border-subtle);
 }
@@ -614,6 +784,216 @@ svg {
 .suggestions span {
   color: var(--text-dim);
   font-size: 9px;
+}
+
+.persona-rag-empty {
+  max-width: 620px;
+}
+
+.persona-rag-build {
+  display: flex;
+  width: 100%;
+  min-height: 92px;
+  align-items: center;
+  gap: 16px;
+  margin-top: 26px;
+  padding: 18px 20px;
+  color: var(--text);
+  text-align: left;
+  background: color-mix(in srgb, var(--primary) 7%, var(--suggestion-bg));
+  border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--suggestion-border));
+  border-radius: 13px;
+  cursor: pointer;
+}
+
+.persona-rag-build:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--primary) 11%, var(--suggestion-hover-bg));
+  border-color: var(--primary);
+}
+
+.persona-rag-build:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.persona-rag-build > svg {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  color: var(--primary);
+}
+
+.persona-rag-build > span {
+  display: grid;
+  gap: 6px;
+}
+
+.persona-rag-build strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.persona-rag-build small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.welcome-card .persona-rag-status,
+.welcome-card .persona-rag-error {
+  margin-top: 11px;
+  font-size: 9px;
+}
+
+.welcome-card .persona-rag-status {
+  color: var(--text-dim);
+}
+
+.welcome-card .persona-rag-error {
+  color: var(--error);
+}
+
+.persona-setup-conversation {
+  width: min(760px, 100%);
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.persona-setup-conversation > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.persona-setup-conversation > header > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.persona-setup-conversation > header strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.persona-setup-conversation > header small,
+.persona-setup-composer-label {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.persona-setup-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.persona-setup-actions button {
+  padding: 6px 9px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.persona-setup-actions button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.persona-setup-actions button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.persona-setup-composer-label {
+  margin-bottom: 7px;
+}
+
+.persona-draft-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 16px;
+  color: var(--text);
+  background: var(--bg-panel);
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+}
+
+.persona-draft-card > header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.persona-draft-card > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.persona-draft-card > header strong {
+  font-size: 12px;
+}
+
+.persona-draft-card > header small {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.persona-draft-card dl {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.persona-draft-card dl > div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.persona-draft-card dt {
+  color: var(--text-dim);
+  font-size: 9px;
+}
+
+.persona-draft-card dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.persona-draft-card > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.persona-draft-card > footer button {
+  padding: 7px 11px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 9px;
+}
+
+.persona-draft-card > footer button.primary {
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.persona-draft-card > footer button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .message-list {
@@ -1414,6 +1794,49 @@ svg {
 .theme-card-copy small {
   color: var(--text-dim);
   font-size: 8px;
+}
+
+.saved-theme-card-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.saved-theme-card {
+  height: 100%;
+}
+
+.saved-theme-card .theme-card-copy {
+  padding-right: 54px;
+}
+
+.saved-theme-delete,
+.saved-theme-delete-confirm {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+.saved-theme-delete,
+.saved-theme-delete-confirm button {
+  padding: 3px 6px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.saved-theme-delete:hover,
+.saved-theme-delete-confirm button:hover {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+  border-color: color-mix(in srgb, var(--error) 25%, transparent);
+}
+
+.saved-theme-delete-confirm {
+  display: flex;
+  gap: 3px;
 }
 
 .settings-section-heading,

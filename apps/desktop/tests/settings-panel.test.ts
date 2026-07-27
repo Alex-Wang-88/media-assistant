@@ -80,6 +80,13 @@ describe("settings appearance panel", () => {
     expect(useUiStore.getState().appearance.manual?.foreground).toBe("#ffcc00");
     expect(useUiStore.getState().activeSavedThemeId).toBeTruthy();
 
+    fireEvent.click(screen.getByRole("button", { name: "删除自定义预设“夜海”" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+    expect(useUiStore.getState().savedThemePresets).toHaveLength(0);
+    expect(useUiStore.getState().activeSavedThemeId).toBeNull();
+    expect(useUiStore.getState().appearance.manual?.backgrounds.dark).toBe("#173d36");
+    expect(screen.queryByRole("radio", { name: /夜海/ })).toBeNull();
+
     fireEvent.click(screen.getByText("翡翠绿"));
     fireEvent.change(screen.getByLabelText("背景颜色"), {
       target: { value: "#21453d" },

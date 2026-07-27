@@ -22,6 +22,10 @@ export class ChatApiError extends Error {
   }
 }
 
+type AgentChatInput = ChatSendInput & {
+  personaReferenceContext?: string;
+};
+
 export async function getAgentStatus(
   apiUrl = process.env.YOOM_API_URL ?? "http://127.0.0.1:8000",
 ): Promise<AgentStatus> {
@@ -47,7 +51,7 @@ export async function getAgentStatus(
 }
 
 export async function streamChat(
-  input: ChatSendInput,
+  input: AgentChatInput,
   onEvent: (event: ChatStreamEvent) => void,
   apiUrl = process.env.YOOM_API_URL ?? "http://127.0.0.1:8000",
 ): Promise<void> {

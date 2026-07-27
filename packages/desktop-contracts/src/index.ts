@@ -25,6 +25,8 @@ export const createProjectInputSchema = z.object({
   name: z.string().trim().min(1).max(80),
 });
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
+export const deleteProjectInputSchema = z.object({ projectId: projectIdSchema });
+export type DeleteProjectInput = z.infer<typeof deleteProjectInputSchema>;
 
 export const workspaceEntrySchema = z.object({
   name: z.string().min(1),
@@ -33,6 +35,25 @@ export const workspaceEntrySchema = z.object({
 });
 export const activateWorkspaceInputSchema = z.object({ path: z.string().min(1) });
 export type WorkspaceEntry = z.infer<typeof workspaceEntrySchema>;
+
+export const personaRagStatusSchema = z.object({
+  ready: z.boolean(),
+  fileCount: z.number().int().nonnegative(),
+  path: z.string().min(1),
+});
+export type PersonaRagStatus = z.infer<typeof personaRagStatusSchema>;
+export const personaProfileInputSchema = z.object({
+  brandOverview: z.string().trim().min(1).max(10_000),
+  audience: z.string().trim().min(1).max(10_000),
+  positioning: z.string().trim().min(1).max(10_000),
+  fixedFacts: z.string().trim().min(1).max(10_000),
+  contentBoundaries: z.string().trim().min(1).max(10_000),
+});
+export type PersonaProfileInput = z.infer<typeof personaProfileInputSchema>;
+export const personaRagImportResultSchema = z.object({
+  names: z.array(z.string().min(1)),
+});
+export type PersonaRagImportResult = z.infer<typeof personaRagImportResultSchema>;
 
 export const artifactKindSchema = z.enum([
   "article",
@@ -81,14 +102,25 @@ export const chatMessageSchema = z.object({
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
-export const chatSendInputSchema = z.object({
-  requestId: z.uuid(),
-  projectId: projectIdSchema,
-  messages: z.array(chatMessageSchema).min(1).max(100),
-  knowledgeEnabled: z.boolean(),
-  strategyEnabled: z.boolean(),
-  autoExecute: z.boolean(),
-});
+export const chatSendInputSchema = z
+  .object({
+    requestId: z.uuid(),
+    projectId: projectIdSchema.optional(),
+    messages: z.array(chatMessageSchema).min(1).max(100),
+    knowledgeEnabled: z.boolean(),
+    strategyEnabled: z.boolean(),
+    autoExecute: z.boolean(),
+    mode: z.enum(["chat", "persona_setup"]).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.mode !== "persona_setup" && !value.projectId) {
+      context.addIssue({
+        code: "custom",
+        path: ["projectId"],
+        message: "普通对话必须指定任务",
+      });
+    }
+  });
 export type ChatSendInput = z.infer<typeof chatSendInputSchema>;
 
 export const agentStatusSchema = z.object({
@@ -195,6 +227,12 @@ export interface DesktopApi {
   tasks: {
     create(input: CreateProjectInput): Promise<Project>;
     list(): Promise<Project[]>;
+    delete(projectId: string): Promise<void>;
+  };
+  personaRag: {
+    status(): Promise<PersonaRagStatus>;
+    confirm(input: PersonaProfileInput): Promise<PersonaRagStatus>;
+    importFiles(): Promise<PersonaRagImportResult>;
   };
   files: {
     listOutputs(projectId: string): Promise<Artifact[]>;
@@ -221,6 +259,10 @@ export const ipcChannels = {
   workspaceActivate: "workspace:activate",
   tasksCreate: "tasks:create",
   tasksList: "tasks:list",
+  tasksDelete: "tasks:delete",
+  personaRagStatus: "persona-rag:status",
+  personaRagConfirm: "persona-rag:confirm",
+  personaRagImportFiles: "persona-rag:import-files",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",

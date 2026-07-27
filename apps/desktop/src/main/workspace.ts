@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   closeSync,
+  copyFileSync,
   existsSync,
   fsyncSync,
   mkdirSync,
@@ -12,13 +13,15 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, extname, join, relative } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   type Artifact,
   artifactSchema,
   type CreateProjectInput,
   type FilePreview,
+  type PersonaProfileInput,
+  type PersonaRagStatus,
   type Project,
   projectSchema,
 } from "@yoom/desktop-contracts";
@@ -35,6 +38,9 @@ const PROJECT_DIRECTORIES = [
   "视频",
   "发布记录",
 ] as const;
+
+const PERSONA_RAG_DIRECTORY = "用户Persona RAG";
+const PERSONA_FILE_NAME = "persona.md";
 
 const OUTPUT_KINDS = new Map<string, Artifact["kind"]>([
   ["文章", "article"],
@@ -91,6 +97,7 @@ export class Workspace {
     this.root = root;
     for (const directory of [
       "企业知识库",
+      join("企业知识库", PERSONA_RAG_DIRECTORY),
       "任务",
       ".yoom/models",
       ".yoom/cache",
@@ -199,6 +206,131 @@ export class Workspace {
     return rows.map((row) => projectSchema.parse(row));
   }
 
+  personaRagStatus(): PersonaRagStatus {
+    const path = this.personaRagPath();
+    const fileCount = countVisibleFiles(path);
+    const personaPath = join(path, PERSONA_FILE_NAME);
+    return {
+      ready: existsSync(personaPath) && statSync(personaPath).isFile(),
+      fileCount,
+      path,
+    };
+  }
+
+  personaRagPath(): string {
+    return join(this.root, "企业知识库", PERSONA_RAG_DIRECTORY);
+  }
+
+  buildPersonaRag(input: PersonaProfileInput): PersonaRagStatus {
+    const persona = [
+      "# 品牌核心 Persona",
+      "",
+      "> 这是品牌长期设定的主文件，可直接打开修改。执行内容任务时应完整读取。",
+      "",
+      "## 账号主体与业务",
+      "",
+      input.brandOverview.trim(),
+      "",
+      "## 目标人群",
+      "",
+      input.audience.trim(),
+      "",
+      "## 品牌定位、核心特点与长期认知",
+      "",
+      input.positioning.trim(),
+      "",
+      "## 固定事实、产品与服务资料",
+      "",
+      input.fixedFacts.trim(),
+      "",
+      "## 内容边界",
+      "",
+      input.contentBoundaries.trim(),
+      "",
+    ].join("\n");
+    atomicWrite(join(this.personaRagPath(), PERSONA_FILE_NAME), persona);
+    return this.personaRagStatus();
+  }
+
+  importPersonaRagFiles(sourcePaths: readonly string[]): string[] {
+    const destinationRoot = join(this.personaRagPath(), "资料");
+    mkdirSync(destinationRoot, { recursive: true });
+    const imported: string[] = [];
+    for (const sourcePath of sourcePaths) {
+      if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) continue;
+      const destination = nextAvailableFilePath(destinationRoot, basename(sourcePath));
+      copyFileSync(sourcePath, destination);
+      imported.push(basename(destination));
+    }
+    return imported;
+  }
+
+  personaRagReferenceContext(): string {
+    const referencesRoot = join(this.personaRagPath(), "资料");
+    const sections: string[] = [];
+    let remaining = 50_000;
+    const personaPath = join(this.personaRagPath(), PERSONA_FILE_NAME);
+    if (existsSync(personaPath) && statSync(personaPath).isFile()) {
+      const persona = readFileSync(personaPath, "utf8").slice(0, 20_000);
+      const section = `[当前 Persona 主文件]\n${persona}`;
+      sections.push(section);
+      remaining -= section.length;
+    }
+    for (const path of visibleFilePaths(referencesRoot)) {
+      if (remaining <= 0) break;
+      const source = relative(referencesRoot, path).replaceAll("\\", "/");
+      const extension = extname(path).toLowerCase();
+      const readable = [".md", ".txt", ".csv", ".json", ".yaml", ".yml"].includes(extension);
+      const content = readable
+        ? readFileSync(path, "utf8").slice(0, Math.min(10_000, remaining))
+        : "";
+      const section = content
+        ? `[本地参考资料：${source}]\n${content}`
+        : `[本地参考文件：${source}，当前格式仅提供文件名]`;
+      sections.push(section);
+      remaining -= section.length;
+    }
+    return sections.join("\n\n");
+  }
+
+  deleteProject(projectId: string): void {
+    const project = this.project(projectId);
+    const tasksRoot = join(this.root, "任务");
+    const projectRelativePath = relative(tasksRoot, project.path);
+    if (
+      !projectRelativePath ||
+      projectRelativePath.startsWith("..") ||
+      isAbsolute(projectRelativePath)
+    ) {
+      throw new Error("任务目录不在当前工作区内，无法删除");
+    }
+
+    let trashPath: string | null = null;
+    if (existsSync(project.path)) {
+      const trashRoot = join(this.root, ".yoom", "trash", "任务");
+      mkdirSync(trashRoot, { recursive: true });
+      trashPath = join(trashRoot, `${basename(project.path)}__${randomUUID()}`);
+      renameSync(project.path, trashPath);
+    }
+
+    try {
+      this.database.exec("BEGIN IMMEDIATE");
+      this.database.prepare("DELETE FROM file_index WHERE project_id = ?").run(projectId);
+      this.database.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      try {
+        this.database.exec("ROLLBACK");
+      } catch {
+        // The transaction may not have started.
+      }
+      if (trashPath && existsSync(trashPath) && !existsSync(project.path)) {
+        renameSync(trashPath, project.path);
+      }
+      throw error;
+    }
+  }
+
   project(projectId: string): Project {
     const row = this.database
       .prepare(
@@ -289,4 +421,40 @@ export class Workspace {
       )
       .run(path, project, mediaType(path), stats.size, stats.mtime.toISOString());
   }
+}
+
+function countVisibleFiles(root: string): number {
+  if (!existsSync(root)) return 0;
+  let count = 0;
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) count += countVisibleFiles(path);
+    else if (entry.isFile()) count += 1;
+  }
+  return count;
+}
+
+function visibleFilePaths(root: string): string[] {
+  if (!existsSync(root)) return [];
+  const paths: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.name.startsWith(".")) continue;
+    const path = join(root, entry.name);
+    if (entry.isDirectory()) paths.push(...visibleFilePaths(path));
+    else if (entry.isFile()) paths.push(path);
+  }
+  return paths.sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function nextAvailableFilePath(directory: string, originalName: string): string {
+  const extension = extname(originalName);
+  const stem = basename(originalName, extension);
+  let candidate = join(directory, originalName);
+  let suffix = 2;
+  while (existsSync(candidate)) {
+    candidate = join(directory, `${stem}-${suffix}${extension}`);
+    suffix += 1;
+  }
+  return candidate;
 }
