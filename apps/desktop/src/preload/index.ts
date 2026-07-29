@@ -15,7 +15,7 @@ import type {
   WorkspaceEntry,
 } from "@yoom/desktop-contracts";
 import { contextBridge, ipcRenderer } from "electron";
-import { expectChatStreamEvent } from "./chat-event";
+import { createChatEventGate } from "./chat-event";
 
 const channels = {
   workspaceSelect: "workspace:select",
@@ -149,13 +149,14 @@ const api: DesktopApi = {
   chat: {
     status: () => ipcRenderer.invoke(channels.chatStatus).then(expectAgentStatus),
     send: async (input: ChatSendInput, onEvent: (event: ChatStreamEvent) => void) => {
+      const gate = createChatEventGate(input.requestId, onEvent);
       const listener = (_event: Electron.IpcRendererEvent, raw: unknown) => {
-        const event = expectChatStreamEvent(raw);
-        if (event.requestId === input.requestId) onEvent(event);
+        gate.handle(raw);
       };
       ipcRenderer.on(channels.chatEvent, listener);
       try {
         await ipcRenderer.invoke(channels.chatSend, input);
+        await gate.waitForTerminal();
       } finally {
         ipcRenderer.removeListener(channels.chatEvent, listener);
       }

@@ -42,40 +42,11 @@ export const personaRagStatusSchema = z.object({
   path: z.string().min(1),
 });
 export type PersonaRagStatus = z.infer<typeof personaRagStatusSchema>;
-export const personaProfileInputSchema = z.object({
-  brandOverview: z.string().trim().min(1).max(10_000),
-  audience: z.string().trim().min(1).max(10_000),
-  positioning: z.string().trim().min(1).max(10_000),
-  fixedFacts: z.string().trim().min(1).max(10_000),
-  contentBoundaries: z.string().trim().min(1).max(10_000),
+export const personaReportInputSchema = z.object({
+  markdown: z.string().trim().min(1).max(2_000_000),
 });
-export type PersonaProfileInput = z.infer<typeof personaProfileInputSchema>;
-const nullablePersonaValueSchema = z.string().trim().min(1).max(10_000).nullable();
-const personaValueListSchema = z.array(z.string().trim().min(1).max(10_000)).max(1_000);
-export const personaAgentProfileSchema = z.object({
-  industry: nullablePersonaValueSchema,
-  account_represents: nullablePersonaValueSchema,
-  business_type: nullablePersonaValueSchema,
-  offerings: personaValueListSchema,
-  target_audiences: personaValueListSchema,
-  customer_scenarios: personaValueListSchema,
-  memory_points: personaValueListSchema,
-  long_term_topics: personaValueListSchema,
-  fixed_facts: personaValueListSchema,
-  prohibited_content: personaValueListSchema,
-});
-export type PersonaAgentProfile = z.infer<typeof personaAgentProfileSchema>;
-export const personaAgentDocumentSchema = z.object({
-  status: z.literal("completed"),
-  profile: personaAgentProfileSchema,
-  current_step: z.literal("completed"),
-  question: z.null(),
-});
-export type PersonaAgentDocument = z.infer<typeof personaAgentDocumentSchema>;
-export const personaRagConfirmInputSchema = z.union([
-  personaProfileInputSchema,
-  personaAgentDocumentSchema,
-]);
+export type PersonaReportInput = z.infer<typeof personaReportInputSchema>;
+export const personaRagConfirmInputSchema = personaReportInputSchema;
 export type PersonaRagConfirmInput = z.infer<typeof personaRagConfirmInputSchema>;
 export const personaRagDocumentSchema = z.object({
   path: z.string().min(1),

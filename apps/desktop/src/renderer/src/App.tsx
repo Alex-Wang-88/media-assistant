@@ -1,14 +1,11 @@
 import * as Switch from "@radix-ui/react-switch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  type Artifact,
-  type ChatMessage,
-  type PersonaAgentDocument,
-  type PersonaProfileInput,
-  type PersonaRagConfirmInput,
-  type PersonaRagImportResult,
-  type Project,
-  personaAgentDocumentSchema,
+import type {
+  Artifact,
+  ChatMessage,
+  PersonaRagConfirmInput,
+  PersonaRagImportResult,
+  Project,
 } from "@yoom/desktop-contracts";
 import {
   memo,
@@ -53,159 +50,25 @@ function personaSetupMessage(
   };
 }
 
-function formatPersonaDraft(profile: PersonaProfileInput): string {
-  return [
-    "我已根据当前对话和资料整理出用户画像草稿：",
-    `账号主体与业务：${profile.brandOverview}`,
-    `目标人群：${profile.audience}`,
-    `品牌定位与长期认知：${profile.positioning}`,
-    `固定事实、产品与服务：${profile.fixedFacts}`,
-    `内容边界：${profile.contentBoundaries}`,
-    "请在界面中确认保存，或继续告诉我需要修改的地方。",
-  ].join("\n\n");
+const PERSONA_REPORT_SECTIONS = [
+  "你卖什么",
+  "内容核心定位",
+  "内容反向定位",
+  "卖给谁",
+  "目标客户",
+  "核心优势",
+  "核心转化目标",
+  "辅助转化目标",
+] as const;
+
+function parsePersonaReport(source: string): string | null {
+  const content = source.trim();
+  const matchedSections = PERSONA_REPORT_SECTIONS.filter((section) =>
+    new RegExp(`(^|\\n)\\s*(?:#{1,6}\\s*)?${section}\\s*(?:\\n|$)`, "m").test(content),
+  );
+  if (matchedSections.length < 6 || !matchedSections.includes("核心转化目标")) return null;
+  return content.startsWith("# ") ? content : `# 用户画像\n\n${content}`;
 }
-
-function parsePersonaDraft(argumentsText: string): PersonaProfileInput | null {
-  try {
-    const value = JSON.parse(argumentsText) as Record<string, unknown>;
-    const keys: (keyof PersonaProfileInput)[] = [
-      "brandOverview",
-      "audience",
-      "positioning",
-      "fixedFacts",
-      "contentBoundaries",
-    ];
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      keys.some((key) => typeof value[key] !== "string" || !value[key].trim())
-    ) {
-      return null;
-    }
-    return Object.fromEntries(
-      keys.map((key) => [key, (value[key] as string).trim()]),
-    ) as PersonaProfileInput;
-  } catch {
-    return null;
-  }
-}
-
-type PersonaSetupStage = "welcome" | "agent";
-
-type PersonaQuestion = {
-  id: string;
-  text: string;
-  mode: "single" | "multiple" | "text";
-  options: string[];
-  allowCustom: boolean;
-  allowSkip: boolean;
-};
-
-function parsePersonaPayload(source: string): Record<string, unknown> | null {
-  const normalized = source
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "");
-  try {
-    const payload = JSON.parse(normalized) as unknown;
-    return typeof payload === "object" && payload !== null && !Array.isArray(payload)
-      ? (payload as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function parsePersonaQuestion(source: string): PersonaQuestion | null {
-  const payload = parsePersonaPayload(source);
-  if (payload?.status !== "asking") return null;
-  try {
-    const rawQuestion = payload.question;
-    if (typeof rawQuestion !== "object" || rawQuestion === null || Array.isArray(rawQuestion)) {
-      return null;
-    }
-    const question = rawQuestion as Record<string, unknown>;
-    if (
-      typeof question.id !== "string" ||
-      typeof question.text !== "string" ||
-      (question.mode !== "single" && question.mode !== "multiple" && question.mode !== "text")
-    ) {
-      return null;
-    }
-    const options = Array.isArray(question.options)
-      ? question.options.filter((option): option is string => typeof option === "string")
-      : [];
-    return {
-      id: question.id,
-      text: question.text,
-      mode: question.mode,
-      options,
-      allowCustom: question.allow_custom === true,
-      allowSkip: question.allow_skip === true,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function parseCompletedPersona(
-  source: string,
-): { document: PersonaAgentDocument; draft: PersonaProfileInput } | null {
-  const payload = parsePersonaPayload(source);
-  const parsed = personaAgentDocumentSchema.safeParse(payload);
-  if (!parsed.success) return null;
-  const profile = parsed.data.profile;
-  const scalar = (value: string | null) => value ?? "";
-  const joinSection = (values: string[], fallback: string) =>
-    values.filter(Boolean).join("；") || fallback;
-  return {
-    document: parsed.data,
-    draft: {
-      brandOverview: joinSection(
-        [
-          scalar(profile.account_represents),
-          scalar(profile.business_type),
-          ...profile.offerings,
-          scalar(profile.industry),
-        ],
-        "未提供",
-      ),
-      audience: joinSection(profile.target_audiences, "未提供"),
-      positioning: joinSection(
-        [...profile.memory_points, ...profile.long_term_topics, ...profile.customer_scenarios],
-        "未提供",
-      ),
-      fixedFacts: joinSection(profile.fixed_facts, "暂无已确认的固定事实"),
-      contentBoundaries: joinSection(profile.prohibited_content, "暂无已确认的内容边界"),
-    },
-  };
-}
-
-type PersonaScalarField = "industry" | "account_represents" | "business_type";
-type PersonaListField =
-  | "offerings"
-  | "target_audiences"
-  | "customer_scenarios"
-  | "memory_points"
-  | "long_term_topics"
-  | "fixed_facts"
-  | "prohibited_content";
-
-const personaScalarFields: { key: PersonaScalarField; label: string }[] = [
-  { key: "industry", label: "所属行业" },
-  { key: "account_represents", label: "账号主体" },
-  { key: "business_type", label: "具体业务类型" },
-];
-
-const personaListFields: { key: PersonaListField; label: string }[] = [
-  { key: "offerings", label: "产品、服务或内容" },
-  { key: "target_audiences", label: "目标人群" },
-  { key: "customer_scenarios", label: "客户选择场景" },
-  { key: "memory_points", label: "希望形成的记忆点" },
-  { key: "long_term_topics", label: "长期内容主题" },
-  { key: "fixed_facts", label: "固定事实" },
-  { key: "prohibited_content", label: "禁止或避免的内容" },
-];
 
 export function App() {
   const queryClient = useQueryClient();
@@ -221,19 +84,12 @@ export function App() {
   const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
   const [personaSetupOpen, setPersonaSetupOpen] = useState(false);
   const [personaSetupMessages, setPersonaSetupMessages] = useState<ConversationMessage[]>([]);
-  const [personaDraft, setPersonaDraft] = useState<PersonaProfileInput | null>(null);
-  const [personaCompletedDocument, setPersonaCompletedDocument] =
-    useState<PersonaAgentDocument | null>(null);
-  const [personaEditDocument, setPersonaEditDocument] = useState<PersonaAgentDocument | null>(null);
+  const [personaReportDraft, setPersonaReportDraft] = useState<string | null>(null);
   const [personaDocumentOpen, setPersonaDocumentOpen] = useState(false);
   const [personaDocumentPath, setPersonaDocumentPath] = useState("");
   const [personaDocumentContent, setPersonaDocumentContent] = useState("");
   const [personaDocumentError, setPersonaDocumentError] = useState<string | null>(null);
   const [personaDropActive, setPersonaDropActive] = useState(false);
-  const [personaSetupStage, setPersonaSetupStage] = useState<PersonaSetupStage>("welcome");
-  const [personaQuestion, setPersonaQuestion] = useState<PersonaQuestion | null>(null);
-  const [personaSelectedOptions, setPersonaSelectedOptions] = useState<string[]>([]);
-  const [personaCustomAnswer, setPersonaCustomAnswer] = useState("");
   const [personaDeleteConfirm, setPersonaDeleteConfirm] = useState(false);
   const [personaDeleteError, setPersonaDeleteError] = useState<string | null>(null);
   const personaSessionId = useRef(crypto.randomUUID());
@@ -241,21 +97,9 @@ export function App() {
   const activeScrollItems = useMemo(
     () =>
       personaSetupOpen
-        ? [
-            ...personaSetupMessages,
-            ...(personaQuestion ? [`question:${personaQuestion.id}`] : []),
-            ...(personaDraft ? ["persona-draft"] : []),
-            ...(personaEditDocument ? ["persona-edit"] : []),
-          ]
+        ? [...personaSetupMessages, ...(personaReportDraft ? ["persona-report-draft"] : [])]
         : conversationMessages,
-    [
-      conversationMessages,
-      personaDraft,
-      personaEditDocument,
-      personaQuestion,
-      personaSetupMessages,
-      personaSetupOpen,
-    ],
+    [conversationMessages, personaReportDraft, personaSetupMessages, personaSetupOpen],
   );
   const {
     viewportRef: messagesViewport,
@@ -341,16 +185,9 @@ export function App() {
   });
   const handlePersonaFilesImported = (result: PersonaRagImportResult) => {
     if (result.names.length === 0) return;
-    const firstAgentRequest = personaSetupStage !== "agent";
-    setPersonaDraft(null);
-    setPersonaCompletedDocument(null);
-    setPersonaEditDocument(null);
-    setPersonaQuestion(null);
-    setPersonaSelectedOptions([]);
-    setPersonaCustomAnswer("");
-    setPersonaSetupStage("agent");
+    setPersonaReportDraft(null);
     void personaRag.refetch();
-    continuePersonaSetupAfterImport(result.names, firstAgentRequest ? [] : personaSetupMessages);
+    continuePersonaSetupAfterImport(result.names);
   };
   const importPersonaRagFiles = useMutation({
     mutationFn: () => window.desktop.personaRag.importFiles(),
@@ -380,13 +217,7 @@ export function App() {
       await personaRag.refetch();
       setPersonaSetupOpen(false);
       setPersonaSetupMessages([]);
-      setPersonaDraft(null);
-      setPersonaCompletedDocument(null);
-      setPersonaEditDocument(null);
-      setPersonaSetupStage("welcome");
-      setPersonaQuestion(null);
-      setPersonaSelectedOptions([]);
-      setPersonaCustomAnswer("");
+      setPersonaReportDraft(null);
       setMessage("");
     },
   });
@@ -403,17 +234,11 @@ export function App() {
       setPersonaDeleteError(null);
       setPersonaSetupOpen(false);
       setPersonaSetupMessages([]);
-      setPersonaDraft(null);
-      setPersonaCompletedDocument(null);
-      setPersonaEditDocument(null);
+      setPersonaReportDraft(null);
       setPersonaDocumentOpen(false);
       setPersonaDocumentPath("");
       setPersonaDocumentContent("");
       setPersonaDocumentError(null);
-      setPersonaSetupStage("welcome");
-      setPersonaQuestion(null);
-      setPersonaSelectedOptions([]);
-      setPersonaCustomAnswer("");
       setMessage("");
       await personaRag.refetch();
     },
@@ -486,17 +311,9 @@ export function App() {
       tools: [],
     };
     setPersonaSetupMessages((current) => [...current, userEntry, assistantEntry]);
-    if (showUserMessage) {
-      setPersonaDraft(null);
-      setPersonaCompletedDocument(null);
-      setPersonaEditDocument(null);
-      setPersonaQuestion(null);
-      setPersonaSelectedOptions([]);
-      setPersonaCustomAnswer("");
-    }
+    if (showUserMessage) setPersonaReportDraft(null);
     setMessage("");
     setIsStreaming(true);
-    let proposedDraft: PersonaProfileInput | null = null;
     let rawAssistantContent = "";
     try {
       await window.desktop.chat.send(
@@ -511,58 +328,14 @@ export function App() {
           includePersonaReferences: includeReferences,
         },
         (event) => {
-          if (event.type === "text-delta") {
-            rawAssistantContent += event.delta;
-            return;
-          }
-          if (
-            event.type === "tool-call" &&
-            event.name === "propose_persona" &&
-            event.status === "completed"
-          ) {
-            proposedDraft = parsePersonaDraft(event.arguments);
-          }
+          if (event.type === "text-delta") rawAssistantContent += event.delta;
           setPersonaSetupMessages((current) => applyChatEvent(current, assistantId, event));
         },
       );
-      const structuredQuestion = parsePersonaQuestion(rawAssistantContent);
-      const completedPersona = parseCompletedPersona(rawAssistantContent);
-      const nextDraft = proposedDraft ?? completedPersona?.draft ?? null;
+      const report = parsePersonaReport(rawAssistantContent);
       requestLatestMessage(true);
-      setPersonaCompletedDocument(completedPersona?.document ?? null);
-      setPersonaEditDocument(null);
-      if (structuredQuestion) {
-        setPersonaQuestion(structuredQuestion);
-        setPersonaSelectedOptions([]);
-        setPersonaCustomAnswer("");
-        setPersonaSetupMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? {
-                  ...entry,
-                  content: structuredQuestion.text,
-                  modelContent: rawAssistantContent,
-                  status: "complete",
-                }
-              : entry,
-          ),
-        );
-      } else if (nextDraft) {
-        setPersonaQuestion(null);
-        setPersonaDraft(nextDraft);
-        setPersonaSetupMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? {
-                  ...entry,
-                  content: formatPersonaDraft(nextDraft),
-                  ...(rawAssistantContent ? { modelContent: rawAssistantContent } : {}),
-                  status: "complete",
-                }
-              : entry,
-          ),
-        );
-      } else if (rawAssistantContent) {
+      setPersonaReportDraft(report);
+      if (rawAssistantContent) {
         setPersonaSetupMessages((current) =>
           current.map((entry) =>
             entry.id === assistantId
@@ -587,88 +360,15 @@ export function App() {
     personaSessionId.current = crypto.randomUUID();
     setPersonaDocumentOpen(false);
     setPersonaSetupOpen(true);
-    setPersonaSetupStage("welcome");
     setPersonaSetupMessages([
       personaSetupMessage(
         "assistant",
-        "欢迎使用用户画像助手。我会通过简短对话了解账号主体、目标人群、长期定位和内容边界，并整理出可由你自由修改的画像草稿。",
+        "你好，欢迎使用用户画像助手。我会通过对话了解你的业务并生成可修改的用户画像报告。请先告诉我，你所在的行业是什么？",
         true,
       ),
     ]);
-    setPersonaDraft(null);
-    setPersonaCompletedDocument(null);
-    setPersonaEditDocument(null);
-    setPersonaQuestion(null);
-    setPersonaSelectedOptions([]);
-    setPersonaCustomAnswer("");
+    setPersonaReportDraft(null);
     setMessage("");
-  };
-
-  const startPersonaConversation = () => {
-    setPersonaSetupStage("agent");
-    setPersonaQuestion(null);
-    void sendPersonaAgentMessage(
-      "请开始通过自然对话帮助我建立长期用户画像，并先提出当前最必要的一个问题。",
-      false,
-      [],
-    );
-  };
-
-  const updatePersonaScalar = (key: PersonaScalarField, value: string) => {
-    setPersonaEditDocument((current) =>
-      current
-        ? {
-            ...current,
-            profile: {
-              ...current.profile,
-              [key]: value.trim() ? value : null,
-            },
-          }
-        : current,
-    );
-  };
-
-  const updatePersonaList = (key: PersonaListField, value: string) => {
-    setPersonaEditDocument((current) =>
-      current
-        ? {
-            ...current,
-            profile: {
-              ...current.profile,
-              [key]: value
-                .split(/\r?\n/)
-                .map((item) => item.trim())
-                .filter(Boolean),
-            },
-          }
-        : current,
-    );
-  };
-
-  const togglePersonaOption = (option: string) => {
-    setPersonaSelectedOptions((current) => {
-      if (personaQuestion?.mode === "single") return current.includes(option) ? [] : [option];
-      return current.includes(option)
-        ? current.filter((candidate) => candidate !== option)
-        : [...current, option];
-    });
-    if (personaQuestion?.mode === "single") setPersonaCustomAnswer("");
-  };
-
-  const submitPersonaQuestion = () => {
-    if (!personaQuestion) return;
-    const custom = personaCustomAnswer.trim();
-    const answer =
-      personaQuestion.mode === "multiple"
-        ? [...personaSelectedOptions, ...(custom ? [custom] : [])].join("、")
-        : custom || personaSelectedOptions[0] || "";
-    if (!answer) return;
-    void sendPersonaAgentMessage(answer);
-  };
-
-  const skipPersonaQuestion = () => {
-    if (!personaQuestion?.allowSkip) return;
-    void sendPersonaAgentMessage("跳过");
   };
 
   function continuePersonaSetupAfterImport(
@@ -678,7 +378,7 @@ export function App() {
     const prompt =
       `我刚添加了这些本地参考资料：${names.join("、")}。` +
       "资料正文已经由客户端在本地读取，并将在本次请求中一并提供。" +
-      "请先分析已有资料：信息足够就形成用户画像草稿；仍有关键缺失时，只追问当前最必要的问题。";
+      "请先分析已有资料：信息足够就继续形成用户画像报告；仍有关键缺失时，只追问当前最必要的问题。";
     if (!personaSetupOpen) {
       setPersonaSetupOpen(true);
       setPersonaSetupMessages([]);
@@ -701,6 +401,17 @@ export function App() {
   useEffect(() => {
     if (!ui.selectedProjectId && projects.data?.[0]) ui.selectProject(projects.data[0].id);
   }, [projects.data, ui]);
+
+  useEffect(() => {
+    if (!personaDeleteConfirm) return;
+    const cancelDelete = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || deletePersonaRag.isPending) return;
+      setPersonaDeleteConfirm(false);
+      setPersonaDeleteError(null);
+    };
+    window.addEventListener("keydown", cancelDelete);
+    return () => window.removeEventListener("keydown", cancelDelete);
+  }, [deletePersonaRag.isPending, personaDeleteConfirm]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: switching projects must clear the active transcript
   useEffect(() => {
@@ -838,10 +549,18 @@ export function App() {
     unconfigured: "Agent 未配置",
     unavailable: "Agent 未连接",
   } as const;
+  const personaOnboardingActive = personaRag.data?.ready !== true;
 
   return (
-    <main className="shell">
-      <aside className="sidebar">
+    <main
+      className={personaOnboardingActive ? "shell persona-onboarding" : "shell"}
+      aria-label={personaOnboardingActive ? "用户画像首次引导" : undefined}
+    >
+      <aside
+        className="sidebar"
+        aria-hidden={personaOnboardingActive}
+        inert={personaOnboardingActive ? true : undefined}
+      >
         <div className="logo-row">
           <span className="logo">
             <Icon name="spark" />
@@ -1017,36 +736,6 @@ export function App() {
               </button>
             ) : null}
           </div>
-          {personaDeleteConfirm ? (
-            <div className="persona-delete-confirm" role="alert">
-              <span>确定删除本地用户画像？</span>
-              <div>
-                <button
-                  type="button"
-                  disabled={deletePersonaRag.isPending}
-                  onClick={() => {
-                    setPersonaDeleteConfirm(false);
-                    setPersonaDeleteError(null);
-                  }}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className="danger"
-                  disabled={deletePersonaRag.isPending}
-                  onClick={() => deletePersonaRag.mutate()}
-                >
-                  {deletePersonaRag.isPending ? "正在删除…" : "确认删除"}
-                </button>
-              </div>
-            </div>
-          ) : null}
-          {personaDeleteError ? (
-            <p className="persona-rag-error" role="alert">
-              {personaDeleteError}
-            </p>
-          ) : null}
           {personaDocumentError && !personaDocumentOpen ? (
             <p className="persona-rag-error" role="alert">
               {personaDocumentError}
@@ -1148,170 +837,30 @@ export function App() {
                     <strong>建立用户画像</strong>
                     <small>Agent 会根据已有回答和本地资料动态追问</small>
                   </div>
-                  <div className="persona-setup-actions">
-                    <button
-                      type="button"
-                      disabled={isStreaming}
-                      onClick={() => {
-                        setPersonaSetupOpen(false);
-                        setPersonaSetupMessages([]);
-                        setPersonaDraft(null);
-                        setPersonaCompletedDocument(null);
-                        setPersonaEditDocument(null);
-                        setPersonaSetupStage("welcome");
-                        setPersonaQuestion(null);
-                        setPersonaSelectedOptions([]);
-                        setPersonaCustomAnswer("");
-                        setMessage("");
-                      }}
-                    >
-                      暂时退出
-                    </button>
-                  </div>
                 </header>
                 <div className="message-list" aria-live="polite">
                   {personaSetupMessages.map((entry) => (
                     <ChatBubble key={entry.id} message={entry} />
                   ))}
                 </div>
-                {personaSetupStage === "welcome" ? (
-                  <div className="persona-trigger-actions">
-                    <button type="button" className="primary" onClick={startPersonaConversation}>
-                      开始建立画像
-                    </button>
-                  </div>
-                ) : null}
-                {personaQuestion ? (
-                  <section className="persona-question-card" aria-label={personaQuestion.text}>
-                    <header>
-                      <strong>
-                        {personaQuestion.mode === "single"
-                          ? "请选择一项"
-                          : personaQuestion.mode === "multiple"
-                            ? "可选择多项"
-                            : "请输入回答"}
-                      </strong>
-                    </header>
-                    {personaQuestion.options.length > 0 ? (
-                      <div className="persona-question-options">
-                        {personaQuestion.options.map((option) => {
-                          const selected = personaSelectedOptions.includes(option);
-                          return (
-                            <button
-                              type="button"
-                              key={option}
-                              className={selected ? "selected" : ""}
-                              aria-pressed={selected}
-                              onClick={() => togglePersonaOption(option)}
-                            >
-                              <span>{selected ? "✓" : ""}</span>
-                              {option}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    {personaQuestion.mode === "text" || personaQuestion.allowCustom ? (
-                      <input
-                        value={personaCustomAnswer}
-                        onChange={(event) => {
-                          setPersonaCustomAnswer(event.target.value);
-                          if (personaQuestion.mode === "single") setPersonaSelectedOptions([]);
-                        }}
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === "Enter" &&
-                            !event.nativeEvent.isComposing &&
-                            personaCustomAnswer.trim()
-                          ) {
-                            event.preventDefault();
-                            submitPersonaQuestion();
-                          }
-                        }}
-                        placeholder="手动输入"
-                      />
-                    ) : null}
-                    <footer>
-                      {personaQuestion.allowSkip ? (
-                        <button type="button" onClick={skipPersonaQuestion}>
-                          跳过
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={
-                          personaQuestion.mode === "multiple"
-                            ? personaSelectedOptions.length === 0 && !personaCustomAnswer.trim()
-                            : !personaSelectedOptions[0] && !personaCustomAnswer.trim()
-                        }
-                        onClick={submitPersonaQuestion}
-                      >
-                        提交回答
-                      </button>
-                    </footer>
-                  </section>
-                ) : null}
-                {personaDraft ? (
+                {personaReportDraft ? (
                   <article className="persona-draft-card">
                     <header>
                       <div>
-                        <strong>用户画像草稿待确认</strong>
-                        <small>确认前不会写入本地主文件</small>
+                        <strong>用户画像报告待确认</strong>
+                        <small>可直接修改；确认前不会写入本地主文件</small>
                       </div>
                     </header>
-                    {personaEditDocument ? (
-                      <div className="persona-profile-edit-form">
-                        <p>所有字段均可自由修改；列表字段每行填写一项，空行会自动忽略。</p>
-                        <div className="persona-profile-edit-grid">
-                          {personaScalarFields.map((field) => (
-                            <label key={field.key}>
-                              <span>{field.label}</span>
-                              <input
-                                value={personaEditDocument.profile[field.key] ?? ""}
-                                onChange={(event) =>
-                                  updatePersonaScalar(field.key, event.target.value)
-                                }
-                              />
-                            </label>
-                          ))}
-                          {personaListFields.map((field) => (
-                            <label key={field.key}>
-                              <span>{field.label}</span>
-                              <textarea
-                                value={personaEditDocument.profile[field.key].join("\n")}
-                                onChange={(event) =>
-                                  updatePersonaList(field.key, event.target.value)
-                                }
-                              />
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <dl>
-                        <div>
-                          <dt>账号主体与业务</dt>
-                          <dd>{personaDraft.brandOverview}</dd>
-                        </div>
-                        <div>
-                          <dt>目标人群</dt>
-                          <dd>{personaDraft.audience}</dd>
-                        </div>
-                        <div>
-                          <dt>定位与长期认知</dt>
-                          <dd>{personaDraft.positioning}</dd>
-                        </div>
-                        <div>
-                          <dt>固定事实与服务</dt>
-                          <dd>{personaDraft.fixedFacts}</dd>
-                        </div>
-                        <div>
-                          <dt>内容边界</dt>
-                          <dd>{personaDraft.contentBoundaries}</dd>
-                        </div>
-                      </dl>
-                    )}
+                    <textarea
+                      className="persona-report-editor"
+                      aria-label="用户画像报告内容"
+                      value={personaReportDraft}
+                      spellCheck={false}
+                      onChange={(event) => {
+                        confirmPersonaRag.reset();
+                        setPersonaReportDraft(event.target.value);
+                      }}
+                    />
                     {confirmPersonaRag.isError ? (
                       <p className="persona-rag-error" role="alert">
                         保存失败：{readableError(confirmPersonaRag.error)}
@@ -1320,41 +869,11 @@ export function App() {
                     <footer>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (personaEditDocument) {
-                            setPersonaEditDocument(null);
-                            return;
-                          }
-                          if (personaCompletedDocument) {
-                            setPersonaEditDocument(structuredClone(personaCompletedDocument));
-                            requestLatestMessage(true);
-                            return;
-                          }
-                          setPersonaDraft(null);
-                          setPersonaCompletedDocument(null);
-                        }}
-                      >
-                        {personaEditDocument
-                          ? "取消修改"
-                          : personaCompletedDocument
-                            ? "修改画像"
-                            : "继续对话修改"}
-                      </button>
-                      <button
-                        type="button"
                         className="primary"
-                        disabled={confirmPersonaRag.isPending}
-                        onClick={() =>
-                          confirmPersonaRag.mutate(
-                            personaEditDocument ?? personaCompletedDocument ?? personaDraft,
-                          )
-                        }
+                        disabled={!personaReportDraft.trim() || confirmPersonaRag.isPending}
+                        onClick={() => confirmPersonaRag.mutate({ markdown: personaReportDraft })}
                       >
-                        {confirmPersonaRag.isPending
-                          ? "正在保存…"
-                          : personaEditDocument
-                            ? "保存修改后的画像"
-                            : "确认并保存"}
+                        {confirmPersonaRag.isPending ? "正在保存…" : "确认并保存到本地"}
                       </button>
                     </footer>
                   </article>
@@ -1447,7 +966,7 @@ export function App() {
           </div>
         </div>
         {!personaDocumentOpen &&
-        ((personaSetupOpen && personaSetupStage === "agent") ||
+        ((personaSetupOpen && !personaReportDraft) ||
           (!personaSetupOpen && (personaRag.data?.ready || conversationMessages.length > 0))) ? (
           <div className="composer-wrap">
             {personaSetupOpen ? (
@@ -1495,7 +1014,7 @@ export function App() {
                     void sendMessage();
                   }
                 }}
-                placeholder={personaSetupOpen ? "回答上方问题…" : "告诉 Agent 你想做什么…"}
+                placeholder={personaSetupOpen ? "请输入你的回答…" : "告诉 Agent 你想做什么…"}
                 disabled={personaSetupOpen && isStreaming}
               />
               <div className="composer-actions">
@@ -1533,7 +1052,11 @@ export function App() {
         ) : null}
       </section>
 
-      <aside className="artifacts">
+      <aside
+        className="artifacts"
+        aria-hidden={personaOnboardingActive}
+        inert={personaOnboardingActive ? true : undefined}
+      >
         <header>
           <div>
             <strong>生成物</strong>
@@ -1600,7 +1123,59 @@ export function App() {
           </footer>
         )}
       </aside>
-      <SettingsPanel />
+      {personaOnboardingActive ? null : <SettingsPanel />}
+      {personaDeleteConfirm ? (
+        <div className="persona-delete-overlay">
+          <button
+            type="button"
+            className="persona-delete-backdrop"
+            aria-label="取消永久删除"
+            disabled={deletePersonaRag.isPending}
+            onClick={() => {
+              setPersonaDeleteConfirm(false);
+              setPersonaDeleteError(null);
+            }}
+          />
+          <section
+            className="persona-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="persona-delete-title"
+          >
+            <header>
+              <div>
+                <h2 id="persona-delete-title">永久删除用户画像？</h2>
+                <p>此操作会永久删除画像主文件和所有参考资料，删除后无法恢复。</p>
+              </div>
+            </header>
+            {personaDeleteError ? (
+              <p className="persona-rag-error" role="alert">
+                {personaDeleteError}
+              </p>
+            ) : null}
+            <footer>
+              <button
+                type="button"
+                disabled={deletePersonaRag.isPending}
+                onClick={() => {
+                  setPersonaDeleteConfirm(false);
+                  setPersonaDeleteError(null);
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="danger"
+                disabled={deletePersonaRag.isPending}
+                onClick={() => deletePersonaRag.mutate()}
+              >
+                {deletePersonaRag.isPending ? "正在永久删除…" : "永久删除"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

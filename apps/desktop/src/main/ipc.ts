@@ -16,7 +16,6 @@ import {
 } from "@yoom/desktop-contracts";
 import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions, shell } from "electron";
 import { getAgentStatus, streamChat } from "./chat-client";
-import { validatePersonaProposal } from "./persona-agent";
 import type { Workspace } from "./workspace";
 
 type WorkspaceAccess = {
@@ -114,15 +113,7 @@ export function registerIpc(access: WorkspaceAccess): void {
           }
         : chatInput;
     await streamChat(agentInput, (streamEvent) => {
-      let outgoingEvent = streamEvent;
-      if (
-        chatInput.mode === "persona_setup" &&
-        streamEvent.type === "tool-call" &&
-        streamEvent.name === "propose_persona"
-      ) {
-        outgoingEvent = validatePersonaProposal(streamEvent);
-      }
-      if (!event.sender.isDestroyed()) event.sender.send(ipcChannels.chatEvent, outgoingEvent);
+      if (!event.sender.isDestroyed()) event.sender.send(ipcChannels.chatEvent, streamEvent);
     });
   });
   ipcMain.handle(ipcChannels.publishStart, (_event, raw) => {

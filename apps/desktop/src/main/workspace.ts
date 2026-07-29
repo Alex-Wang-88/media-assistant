@@ -9,6 +9,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
@@ -21,7 +22,6 @@ import {
   artifactSchema,
   type CreateProjectInput,
   type FilePreview,
-  type PersonaAgentDocument,
   type PersonaRagConfirmInput,
   type PersonaRagDocument,
   type PersonaRagDroppedFile,
@@ -178,53 +178,6 @@ function extractPersonaReferenceText(path: string, limit: number): string {
   return "";
 }
 
-function formatPersonaAgentDocument(document: PersonaAgentDocument): string {
-  const scalar = (value: string | null) => value ?? "未提供";
-  const list = (values: readonly string[]) =>
-    values.length > 0 ? values.map((value) => `- ${value}`).join("\n") : "- 暂无";
-  const profile = document.profile;
-  return [
-    "# 用户画像",
-    "",
-    "> 这是由画像建立对话生成的本地主文件，可直接查看、修改并保存。",
-    "",
-    "## 基本信息",
-    "",
-    `- 所属行业：${scalar(profile.industry)}`,
-    `- 账号主体：${scalar(profile.account_represents)}`,
-    `- 具体业务类型：${scalar(profile.business_type)}`,
-    "",
-    "## 主要产品、服务或内容",
-    "",
-    list(profile.offerings),
-    "",
-    "## 目标人群",
-    "",
-    list(profile.target_audiences),
-    "",
-    "## 客户选择场景",
-    "",
-    list(profile.customer_scenarios),
-    "",
-    "## 希望形成的记忆点",
-    "",
-    list(profile.memory_points),
-    "",
-    "## 长期内容主题",
-    "",
-    list(profile.long_term_topics),
-    "",
-    "## 固定事实",
-    "",
-    list(profile.fixed_facts),
-    "",
-    "## 禁止或需要避免的内容",
-    "",
-    list(profile.prohibited_content),
-    "",
-  ].join("\n");
-}
-
 export class Workspace {
   readonly root: string;
   readonly database: DatabaseSync;
@@ -359,40 +312,7 @@ export class Workspace {
   }
 
   buildPersonaRag(input: PersonaRagConfirmInput): PersonaRagStatus {
-    if ("status" in input) {
-      atomicWrite(
-        join(this.personaRagPath(), PERSONA_FILE_NAME),
-        formatPersonaAgentDocument(input),
-      );
-      return this.personaRagStatus();
-    }
-    const persona = [
-      "# 品牌核心 Persona",
-      "",
-      "> 这是用户画像的本地主文件，可直接查看和修改。",
-      "",
-      "## 账号主体与业务",
-      "",
-      input.brandOverview.trim(),
-      "",
-      "## 目标人群",
-      "",
-      input.audience.trim(),
-      "",
-      "## 品牌定位、核心特点与长期认知",
-      "",
-      input.positioning.trim(),
-      "",
-      "## 固定事实、产品与服务资料",
-      "",
-      input.fixedFacts.trim(),
-      "",
-      "## 内容边界",
-      "",
-      input.contentBoundaries.trim(),
-      "",
-    ].join("\n");
-    atomicWrite(join(this.personaRagPath(), PERSONA_FILE_NAME), persona);
+    atomicWrite(join(this.personaRagPath(), PERSONA_FILE_NAME), `${input.markdown.trimEnd()}\n`);
     return this.personaRagStatus();
   }
 
@@ -412,9 +332,7 @@ export class Workspace {
   deletePersonaRag(): PersonaRagStatus {
     const path = this.personaRagPath();
     if (countVisibleFiles(path) === 0) return this.personaRagStatus();
-    const trashRoot = join(this.root, ".yoom", "trash", PERSONA_RAG_DIRECTORY);
-    mkdirSync(trashRoot, { recursive: true });
-    renameSync(path, join(trashRoot, `${Date.now()}__${randomUUID()}`));
+    rmSync(path, { recursive: true, force: true });
     mkdirSync(path, { recursive: true });
     return this.personaRagStatus();
   }

@@ -6,10 +6,9 @@ import {
   createProjectInputSchema,
   deleteProjectInputSchema,
   deviceCommandSchema,
-  personaAgentDocumentSchema,
-  personaProfileInputSchema,
   personaRagDroppedFilesSchema,
   personaRagStatusSchema,
+  personaReportInputSchema,
   publishStartInputSchema,
 } from "../src";
 
@@ -54,38 +53,13 @@ describe("desktop contracts", () => {
     );
   });
 
-  it("requires every core Persona answer before building", () => {
-    const complete = {
-      brandOverview: "社区咖啡店",
-      audience: "附近居民与上班族",
-      positioning: "手冲咖啡与社区空间",
-      fixedFacts: "营业时间为每天 8:00 至 20:00",
-      contentBoundaries: "不宣传未经确认的折扣",
-    };
-    expect(personaProfileInputSchema.safeParse(complete).success).toBe(true);
-    expect(personaProfileInputSchema.safeParse({ ...complete, audience: " " }).success).toBe(false);
-  });
-
-  it("validates the completed Persona Agent document", () => {
+  it("requires a non-empty Markdown report before building Persona RAG", () => {
     expect(
-      personaAgentDocumentSchema.safeParse({
-        status: "completed",
-        profile: {
-          industry: "餐饮与食品",
-          account_represents: "门店",
-          business_type: "社区咖啡店",
-          offerings: ["手冲咖啡"],
-          target_audiences: ["附近居民"],
-          customer_scenarios: ["周末休闲"],
-          memory_points: ["社区空间"],
-          long_term_topics: ["咖啡知识"],
-          fixed_facts: [],
-          prohibited_content: [],
-        },
-        current_step: "completed",
-        question: null,
+      personaReportInputSchema.safeParse({
+        markdown: "# 用户画像\n\n## 你卖什么\n\n进口家具",
       }).success,
     ).toBe(true);
+    expect(personaReportInputSchema.safeParse({ markdown: " " }).success).toBe(false);
   });
 
   it("rejects publishing without explicit approval", () => {
