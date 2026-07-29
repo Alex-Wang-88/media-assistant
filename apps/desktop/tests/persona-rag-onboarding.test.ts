@@ -108,7 +108,16 @@ describe("Persona RAG plain-text onboarding", () => {
           status: async () => ({ state: "unconfigured" as const }),
           send,
         },
-        publish: { start: vi.fn() },
+        publish: {
+          start: vi.fn(),
+          selectImages: vi.fn(),
+          releaseImages: vi.fn(),
+          listBilibiliAccounts: vi.fn(async () => []),
+          createBilibiliAccount: vi.fn(),
+          deleteBilibiliAccount: vi.fn(async () => []),
+          openBilibili: vi.fn(),
+          fillBilibili: vi.fn(),
+        },
       } satisfies DesktopApi,
     });
     const queryClient = new QueryClient({
@@ -172,6 +181,28 @@ describe("Persona RAG plain-text onboarding", () => {
     expect(screen.queryByLabelText("用户画像首次引导")).toBeNull();
     expect(screen.getByRole("button", { name: "新建任务" })).toBeTruthy();
     expect(screen.getByText("生成物")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "开始创建多平台推文" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "制定首发策略" })).toBeNull();
+    expect(screen.queryByRole("switch", { name: "企业知识" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "任务对话输入区" })).toBeNull();
+    const startCreating = screen.getByRole("button", { name: "开始创建多平台推文" });
+    fireEvent.click(startCreating);
+    expect(screen.getByRole("heading", { name: "选择本次内容类型" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /产品推广文案/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /公司软文/ })).toBeTruthy();
+    expect(screen.queryByPlaceholderText("告诉我这次要推广的产品…")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /产品推广文案/ }));
+    expect(await screen.findByText(/接下来请告诉我本次想推广的产品是什么/)).toBeTruthy();
+    expect(screen.getByPlaceholderText("告诉我这次要推广的产品…")).toBeTruthy();
+    expect(send).toHaveBeenCalledTimes(2);
+    fireEvent.change(screen.getByPlaceholderText("告诉我这次要推广的产品…"), {
+      target: { value: "尚未发送的产品内容" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "返回内容类型选择" }));
+    expect(screen.getByRole("heading", { name: "选择本次内容类型" })).toBeTruthy();
+    expect(screen.queryByText(/接下来请告诉我本次想推广的产品是什么/)).toBeNull();
+    expect(screen.queryByPlaceholderText("告诉我这次要推广的产品…")).toBeNull();
+    expect(send).toHaveBeenCalledTimes(2);
     fireEvent.click(screen.getByRole("button", { name: "查看或更新画像" }));
     const savedEditor = await screen.findByLabelText("用户画像主文件内容");
     fireEvent.change(savedEditor, { target: { value: "# 用户画像\n\n保存后的再次修改" } });

@@ -87,6 +87,7 @@ function mediaType(path: string): string {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
+    ".gif": "image/gif",
     ".pdf": "application/pdf",
     ".mp4": "video/mp4",
   };

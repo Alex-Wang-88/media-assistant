@@ -1,17 +1,20 @@
 import type {
   AgentStatus,
   Artifact,
+  BilibiliAccount,
   ChatSendInput,
   ChatStreamEvent,
   CreateProjectInput,
   DesktopApi,
   FilePreview,
+  LocalPublishImage,
   PersonaRagConfirmInput,
   PersonaRagDocument,
   PersonaRagDroppedFile,
   PersonaRagImportResult,
   PersonaRagStatus,
   Project,
+  PublishAutomationResult,
   WorkspaceEntry,
 } from "@yoom/desktop-contracts";
 import { contextBridge, ipcRenderer } from "electron";
@@ -41,6 +44,13 @@ const channels = {
   chatSend: "chat:send",
   chatEvent: "chat:event",
   publishStart: "publish:start",
+  publishImagesSelect: "publish-images:select",
+  publishImagesRelease: "publish-images:release",
+  publishBilibiliAccountsList: "publish:bilibili-accounts-list",
+  publishBilibiliAccountCreate: "publish:bilibili-account-create",
+  publishBilibiliAccountDelete: "publish:bilibili-account-delete",
+  publishBilibiliOpen: "publish:bilibili-open",
+  publishBilibiliFill: "publish:bilibili-fill",
 } as const;
 
 function expectString(value: unknown): string {
@@ -167,6 +177,32 @@ const api: DesktopApi = {
       ipcRenderer
         .invoke(channels.publishStart, input)
         .then((value: unknown) => expectObject<{ jobId: string }>(value)),
+    selectImages: (remaining) =>
+      ipcRenderer
+        .invoke(channels.publishImagesSelect, { remaining })
+        .then((value: unknown) => expectArray<LocalPublishImage>(value)),
+    releaseImages: (ids) =>
+      ipcRenderer.invoke(channels.publishImagesRelease, { ids }).then(() => undefined),
+    listBilibiliAccounts: () =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliAccountsList)
+        .then((value: unknown) => expectArray<BilibiliAccount>(value)),
+    createBilibiliAccount: () =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliAccountCreate)
+        .then((value: unknown) => expectObject<BilibiliAccount>(value)),
+    deleteBilibiliAccount: (accountId) =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliAccountDelete, { accountId })
+        .then((value: unknown) => expectArray<BilibiliAccount>(value)),
+    openBilibili: (input) =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliOpen, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    fillBilibili: (input) =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliFill, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
   },
 };
 

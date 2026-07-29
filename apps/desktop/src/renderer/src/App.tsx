@@ -1,4 +1,3 @@
-import * as Switch from "@radix-ui/react-switch";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Artifact,
@@ -27,6 +26,7 @@ import {
 } from "./appearance";
 import { useChatScroll } from "./chat-scroll";
 import { applyChatEvent, type ConversationMessage, type ConversationToolCall } from "./chat-state";
+import { PublishCenter, type PublishCenterSeed } from "./PublishCenter";
 import { SettingsPanel } from "./SettingsPanel";
 import { useUiStore } from "./store";
 
@@ -61,6 +61,15 @@ const PERSONA_REPORT_SECTIONS = [
   "辅助转化目标",
 ] as const;
 
+type ContentAgentType = "product_promotion" | "company_pr";
+
+const CONTENT_AGENT_WELCOME: Record<ContentAgentType, string> = {
+  product_promotion:
+    "你好，接下来请告诉我本次想推广的产品是什么。可以先从产品名称、主要卖点或活动信息开始。",
+  company_pr:
+    "你好，接下来请告诉我这次公司软文想表达的主题。可以是品牌故事、企业动态、公司理念或其他方向。",
+};
+
 function parsePersonaReport(source: string): string | null {
   const content = source.trim();
   const matchedSections = PERSONA_REPORT_SECTIONS.filter((section) =>
@@ -92,8 +101,13 @@ export function App() {
   const [personaDropActive, setPersonaDropActive] = useState(false);
   const [personaDeleteConfirm, setPersonaDeleteConfirm] = useState(false);
   const [personaDeleteError, setPersonaDeleteError] = useState<string | null>(null);
+  const [contentTypePickerOpen, setContentTypePickerOpen] = useState(false);
+  const [contentAgentType, setContentAgentType] = useState<ContentAgentType | null>(null);
+  const [publishCenterOpen, setPublishCenterOpen] = useState(false);
+  const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed | null>(null);
   const personaSessionId = useRef(crypto.randomUUID());
   const skipNextProjectReset = useRef(false);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const activeScrollItems = useMemo(
     () =>
       personaSetupOpen
@@ -371,6 +385,23 @@ export function App() {
     setMessage("");
   };
 
+  const selectContentAgent = (type: ContentAgentType) => {
+    setContentAgentType(type);
+    setContentTypePickerOpen(false);
+    setConversationMessages([personaSetupMessage("assistant", CONTENT_AGENT_WELCOME[type], true)]);
+    setMessage("");
+    requestAnimationFrame(() => messageInputRef.current?.focus());
+  };
+
+  const returnToContentTypePicker = () => {
+    cancelLatestMessage();
+    setContentAgentType(null);
+    setContentTypePickerOpen(true);
+    setConversationMessages([]);
+    setMessage("");
+    setAgentRequestFailed(false);
+  };
+
   function continuePersonaSetupAfterImport(
     names: string[],
     previousMessages = personaSetupMessages,
@@ -420,6 +451,8 @@ export function App() {
       return;
     }
     setConversationMessages([]);
+    setContentTypePickerOpen(false);
+    setContentAgentType(null);
     setMessage("");
     setIsStreaming(false);
     cancelLatestMessage();
@@ -437,7 +470,7 @@ export function App() {
     const requestId = crypto.randomUUID();
     const assistantId = crypto.randomUUID();
     const history: ChatMessage[] = conversationMessages
-      .filter((entry) => entry.content.trim())
+      .filter((entry) => !entry.modelExcluded && entry.content.trim())
       .map((entry) => ({ role: entry.role, content: entry.content }));
     const userMessage: ConversationMessage = {
       id: crypto.randomUUID(),
@@ -496,6 +529,8 @@ export function App() {
   };
 
   const refreshWorkspace = async () => {
+    setPublishCenterOpen(false);
+    setPublishCenterSeed(null);
     ui.resetProject();
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["workspace"] }),
@@ -743,6 +778,16 @@ export function App() {
           ) : null}
         </section>
         <div className="sidebar-footer">
+          <button
+            type="button"
+            onClick={() => {
+              setPublishCenterOpen(true);
+            }}
+          >
+            <span className="nav-label">
+              <Icon name="file" /> 发布中心
+            </span>
+          </button>
           <button type="button">
             <span className="nav-label">
               <Icon name="monitor" /> 已配对设备
@@ -879,43 +924,43 @@ export function App() {
                   </article>
                 ) : null}
               </div>
+            ) : conversationMessages.length === 0 &&
+              personaRag.data?.ready &&
+              contentTypePickerOpen ? (
+              <div className="welcome-card content-type-picker">
+                <span className="welcome-mark">
+                  <Icon name="spark" />
+                </span>
+                <h1>选择本次内容类型</h1>
+                <p>不同类型会进入不同的智能体对话流程。选择后才会显示对话输入框。</p>
+                <div className="content-type-options">
+                  <button type="button" onClick={() => selectContentAgent("product_promotion")}>
+                    <strong>产品推广文案</strong>
+                    <span>围绕具体产品、卖点和活动生成内容</span>
+                  </button>
+                  <button type="button" onClick={() => selectContentAgent("company_pr")}>
+                    <strong>公司软文</strong>
+                    <span>围绕品牌、企业动态或公司主题生成内容</span>
+                  </button>
+                </div>
+              </div>
             ) : conversationMessages.length === 0 && personaRag.data?.ready ? (
               <div className="welcome-card">
                 <span className="welcome-mark">
                   <Icon name="spark" />
                 </span>
-                <h1>今天想完成什么？</h1>
-                <p>直接描述目标、平台和内容。Agent 会选择合适的工具，并将结果保存到当前工作区。</p>
-                <div className="suggestions">
-                  <button
-                    type="button"
-                    onClick={() => setMessage("为新品制定一套小红书首发内容策略")}
-                  >
-                    <strong>制定首发策略</strong>
-                    <span>为新品规划小红书内容</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMessage("分析我上传的流量数据并给出可验证的实验建议")}
-                  >
-                    <strong>分析流量数据</strong>
-                    <span>从数据中发现增长机会</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMessage("写一篇适合微信公众号发布的产品介绍文章")}
-                  >
-                    <strong>创作平台文章</strong>
-                    <span>说明平台和主题即可开始</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMessage("根据企业知识库整理一份本周选题清单")}
-                  >
-                    <strong>引用企业知识</strong>
-                    <span>基于本地资料生成内容</span>
-                  </button>
-                </div>
+                <h1>开始创建多平台推文</h1>
+                <p>
+                  描述本次要推广的产品、服务或公司主题，Agent
+                  会继续询问必要信息，并生成适合不同平台的文案。
+                </p>
+                <button
+                  type="button"
+                  className="primary welcome-primary"
+                  onClick={() => setContentTypePickerOpen(true)}
+                >
+                  开始创建多平台推文
+                </button>
               </div>
             ) : conversationMessages.length === 0 ? (
               <div className="welcome-card persona-rag-empty">
@@ -947,6 +992,17 @@ export function App() {
               </div>
             ) : (
               <div className="message-list" aria-live="polite">
+                {contentAgentType ? (
+                  <button
+                    type="button"
+                    className="content-agent-back"
+                    disabled={isStreaming}
+                    onClick={returnToContentTypePicker}
+                  >
+                    <span aria-hidden="true">←</span>
+                    返回内容类型选择
+                  </button>
+                ) : null}
                 {conversationMessages.map((entry) => (
                   <ChatBubble key={entry.id} message={entry} />
                 ))}
@@ -967,32 +1023,13 @@ export function App() {
         </div>
         {!personaDocumentOpen &&
         ((personaSetupOpen && !personaReportDraft) ||
-          (!personaSetupOpen && (personaRag.data?.ready || conversationMessages.length > 0))) ? (
+          (!personaSetupOpen && conversationMessages.length > 0)) ? (
           <div className="composer-wrap">
             {personaSetupOpen ? (
               <div className="persona-setup-composer-label">
                 正在建立用户画像 · 可随时上传补充资料
               </div>
-            ) : (
-              <div className="toggles">
-                <Toggle
-                  label="企业知识"
-                  checked={ui.knowledgeEnabled}
-                  onChange={(v) => ui.setToggle("knowledgeEnabled", v)}
-                />
-                <Toggle
-                  label="流量策略"
-                  checked={ui.strategyEnabled}
-                  onChange={(v) => ui.setToggle("strategyEnabled", v)}
-                />
-                <Toggle
-                  label="自动执行"
-                  checked={ui.autoExecute}
-                  onChange={(v) => ui.setToggle("autoExecute", v)}
-                  warning
-                />
-              </div>
-            )}
+            ) : null}
             <fieldset
               aria-label={
                 personaSetupOpen ? "用户画像对话输入区，可拖拽上传资料" : "任务对话输入区"
@@ -1006,6 +1043,7 @@ export function App() {
               onDrop={personaSetupOpen ? handlePersonaDrop : undefined}
             >
               <textarea
+                ref={messageInputRef}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(event) => {
@@ -1014,7 +1052,13 @@ export function App() {
                     void sendMessage();
                   }
                 }}
-                placeholder={personaSetupOpen ? "请输入你的回答…" : "告诉 Agent 你想做什么…"}
+                placeholder={
+                  personaSetupOpen
+                    ? "请输入你的回答…"
+                    : contentAgentType === "company_pr"
+                      ? "告诉我这次公司软文的主题…"
+                      : "告诉我这次要推广的产品…"
+                }
                 disabled={personaSetupOpen && isStreaming}
               />
               <div className="composer-actions">
@@ -1120,9 +1164,33 @@ export function App() {
             <button type="button" onClick={() => navigator.clipboard.writeText(preview.data.path)}>
               复制路径
             </button>
+            {preview.data.content ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const artifact = (artifacts.data ?? []).find(
+                    (entry) => entry.path === ui.selectedArtifactPath,
+                  );
+                  setPublishCenterSeed({
+                    key: crypto.randomUUID(),
+                    title: artifact?.name.replace(/\.[^.]+$/, "") || "Agent 生成内容",
+                    content: preview.data?.content ?? "",
+                  });
+                  setPublishCenterOpen(true);
+                }}
+              >
+                转入发布中心
+              </button>
+            ) : null}
           </footer>
         )}
       </aside>
+      <PublishCenter
+        open={publishCenterOpen}
+        seed={publishCenterSeed}
+        onSeedConsumed={() => setPublishCenterSeed(null)}
+        onClose={() => setPublishCenterOpen(false)}
+      />
       {personaOnboardingActive ? null : <SettingsPanel />}
       {personaDeleteConfirm ? (
         <div className="persona-delete-overlay">
@@ -1247,27 +1315,6 @@ function ToolCallStatus({ tool }: { tool: ConversationToolCall }) {
       {tool.arguments && <pre>{tool.arguments}</pre>}
       {tool.result && <pre className="tool-result">{tool.result}</pre>}
     </details>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-  warning = false,
-}: {
-  label: string;
-  checked: boolean;
-  onChange(value: boolean): void;
-  warning?: boolean;
-}) {
-  return (
-    <span className={warning ? "toggle warning" : "toggle"}>
-      <Switch.Root checked={checked} onCheckedChange={onChange} aria-label={label}>
-        <Switch.Thumb className="toggle-thumb" />
-      </Switch.Root>
-      {label}
-    </span>
   );
 }
 

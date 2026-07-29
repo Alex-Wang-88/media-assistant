@@ -28,3 +28,9 @@ Thumbs.db
 
 # Tooling / agent state
 .workbuddy/
+
+# Private platform login cookies and sessions
+private-platform-sessions/
+
+# Local-only platform DOM inspection scripts and output
+.local-platform-tools/
