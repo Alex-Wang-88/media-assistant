@@ -202,6 +202,54 @@ export const localPublishImageSchema = z.object({
 });
 export type LocalPublishImage = z.infer<typeof localPublishImageSchema>;
 
+export const publishDraftImageReferenceSchema = localPublishImageSchema.omit({ previewUrl: true });
+export type PublishDraftImageReference = z.infer<typeof publishDraftImageReferenceSchema>;
+
+export const publishDraftSchema = z.object({
+  id: z.uuid(),
+  title: z.string().max(80),
+  platform: platformSchema.nullable(),
+  bilibiliAccountId: z.uuid().nullable(),
+  content: z.string().max(100_000),
+  images: z.array(localPublishImageSchema).max(20),
+  source: z.enum(["manual", "generated"]),
+  pinned: z.boolean(),
+});
+export type PublishDraft = z.infer<typeof publishDraftSchema>;
+
+export const persistedPublishDraftSchema = publishDraftSchema.extend({
+  images: z.array(publishDraftImageReferenceSchema).max(20),
+});
+export type PersistedPublishDraft = z.infer<typeof persistedPublishDraftSchema>;
+
+const autoPublishByPlatformSchema = z.record(platformSchema, z.boolean());
+
+const publishDraftStateBaseSchema = z.object({
+  version: z.literal(1),
+  selectedDraftId: z.uuid(),
+  autoPublishByPlatform: autoPublishByPlatformSchema,
+});
+
+export const publishDraftStateSchema = publishDraftStateBaseSchema
+  .extend({
+    drafts: z.array(publishDraftSchema).min(1).max(100),
+  })
+  .refine(
+    (state) => state.drafts.some((draft) => draft.id === state.selectedDraftId),
+    "选中的发布草稿不存在",
+  );
+export type PublishDraftState = z.infer<typeof publishDraftStateSchema>;
+
+export const persistedPublishDraftStateSchema = publishDraftStateBaseSchema
+  .extend({
+    drafts: z.array(persistedPublishDraftSchema).min(1).max(100),
+  })
+  .refine(
+    (state) => state.drafts.some((draft) => draft.id === state.selectedDraftId),
+    "选中的发布草稿不存在",
+  );
+export type PersistedPublishDraftState = z.infer<typeof persistedPublishDraftStateSchema>;
+
 export const selectPublishImagesInputSchema = z.object({
   remaining: z.number().int().min(1).max(20),
 });
@@ -316,6 +364,8 @@ export interface DesktopApi {
   };
   publish: {
     start(input: z.infer<typeof publishStartInputSchema>): Promise<{ jobId: string }>;
+    loadDrafts(): Promise<PublishDraftState | null>;
+    saveDrafts(state: PublishDraftState): Promise<void>;
     selectImages(remaining: number): Promise<LocalPublishImage[]>;
     releaseImages(ids: string[]): Promise<void>;
     listBilibiliAccounts(): Promise<BilibiliAccount[]>;
@@ -350,6 +400,8 @@ export const ipcChannels = {
   chatSend: "chat:send",
   chatEvent: "chat:event",
   publishStart: "publish:start",
+  publishDraftsLoad: "publish-drafts:load",
+  publishDraftsSave: "publish-drafts:save",
   publishImagesSelect: "publish-images:select",
   publishImagesRelease: "publish-images:release",
   publishBilibiliAccountsList: "publish:bilibili-accounts-list",

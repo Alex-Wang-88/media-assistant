@@ -110,6 +110,8 @@ describe("Persona RAG plain-text onboarding", () => {
         },
         publish: {
           start: vi.fn(),
+          loadDrafts: vi.fn(async () => null),
+          saveDrafts: vi.fn(async () => undefined),
           selectImages: vi.fn(),
           releaseImages: vi.fn(),
           listBilibiliAccounts: vi.fn(async () => []),

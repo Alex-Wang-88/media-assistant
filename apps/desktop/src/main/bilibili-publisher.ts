@@ -6,10 +6,12 @@ import { app, BrowserWindow, session } from "electron";
 import {
   chooseFileInSystemDialog,
   clickWithSystemMouse,
+  deleteTextBackwardWithSystemKeyboard,
   replaceTextWithSystemShortcut,
   waitForSystemFileDialog,
 } from "./native-input";
 import { BILIBILI_SELECTORS } from "./platforms/bilibili/selectors";
+import { countConfirmedTrailingPasteCleanupKeystrokes } from "./platforms/bilibili/text";
 
 const BILIBILI_DYNAMIC_URL = "https://t.bilibili.com/";
 const PRIVATE_SESSION_DIRECTORY = "private-platform-sessions";
@@ -370,13 +372,12 @@ async function fillBilibiliWindow(
     };
   }
   await replaceFocusedText(window, content);
+  await removeConfirmedBilibiliBodySuffix(window, content);
   if (assetPaths.length > 0) {
-    const imagesFilled = await chooseImageFiles(window, assetPaths);
-    if (!imagesFilled.ok) {
-      return {
-        state: "needs_attention",
-        message: imageFillFailureMessage(imagesFilled.reason),
-      };
+    try {
+      await chooseImageFiles(window, assetPaths);
+    } catch {
+      // Image filling is best effort and must not report or block text publishing.
     }
   }
 
@@ -437,6 +438,66 @@ async function replaceFocusedText(window: BrowserWindow, content: string): Promi
   await delay(120);
   await replaceTextWithSystemShortcut(content);
   await delay(120);
+}
+
+async function removeConfirmedBilibiliBodySuffix(
+  window: BrowserWindow,
+  expected: string,
+): Promise<void> {
+  const actual = await readBilibiliBodyText(window);
+  if (actual === null) return;
+  const cleanupKeystrokeCount = countConfirmedTrailingPasteCleanupKeystrokes(actual, expected);
+  if (cleanupKeystrokeCount === 0) return;
+  if (!(await placeBilibiliBodyCaretAtEnd(window))) return;
+
+  window.show();
+  window.focus();
+  await delay(80);
+  try {
+    await deleteTextBackwardWithSystemKeyboard(cleanupKeystrokeCount);
+  } catch {
+    // Trailing cleanup is best effort and must never block image filling or publishing.
+  }
+}
+
+async function readBilibiliBodyText(window: BrowserWindow): Promise<string | null> {
+  const script = `(() => {
+    const composer = document.querySelector(${JSON.stringify(BILIBILI_SELECTORS.composer)});
+    const editor = composer?.querySelector(${JSON.stringify(BILIBILI_SELECTORS.body)});
+    return editor?.textContent ?? null;
+  })()`;
+  const root = window.webContents.mainFrame;
+  const frames = [root, ...root.framesInSubtree].filter(
+    (frame, index, all) =>
+      all.findIndex((candidate) => candidate.routingId === frame.routingId) === index,
+  );
+  for (const frame of frames) {
+    try {
+      const text = (await frame.executeJavaScript(script, true)) as unknown;
+      if (typeof text === "string") return text;
+    } catch {
+      // Cross-origin or transient frames can disappear while the page is loading.
+    }
+  }
+  return null;
+}
+
+async function placeBilibiliBodyCaretAtEnd(window: BrowserWindow): Promise<boolean> {
+  const script = `(() => {
+    const composer = document.querySelector(${JSON.stringify(BILIBILI_SELECTORS.composer)});
+    const editor = composer?.querySelector(${JSON.stringify(BILIBILI_SELECTORS.body)});
+    if (!editor) return false;
+    editor.focus();
+    const selection = window.getSelection();
+    if (!selection) return false;
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  })()`;
+  return executeInFrames(window, script);
 }
 
 async function chooseImageFiles(
@@ -678,22 +739,6 @@ async function clickBilibiliControl(window: BrowserWindow, selector: string): Pr
   } catch {
     return false;
   }
-}
-
-function imageFillFailureMessage(reason: ImageFillFailure): string {
-  const messages: Record<ImageFillFailure, string> = {
-    image_button_missing:
-      "标题和正文已填入，但B站页面中没有找到图片按钮“.bili-dyn-publishing__tools__item.pic”。",
-    add_button_missing:
-      "B站配图模式已打开，但没有找到重新选择图片的“＋”按钮“.bili-pics-uploader__add”。",
-    old_image_remove_failed:
-      "B站编辑区存在上次残留图片，但没有成功点击图片上的“×”或图片节点没有消失。",
-    file_dialog_missing:
-      "已经点击B站图片控件，但系统文件选择窗口没有出现，因此没有继续输入图片路径。",
-    preview_missing: "系统文件窗口已经完成选择，但B站没有新增“.bili-pics-uploader__item”图片节点。",
-    upload_timeout: "B站已经新增图片节点，但“.loading”状态在30秒内没有结束，请检查网络或图片格式。",
-  };
-  return messages[reason];
 }
 
 async function pageLooksLoggedOut(window: BrowserWindow): Promise<boolean> {

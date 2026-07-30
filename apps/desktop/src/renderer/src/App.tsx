@@ -1187,6 +1187,7 @@ export function App() {
       </aside>
       <PublishCenter
         open={publishCenterOpen}
+        workspacePath={workspace.data ?? null}
         seed={publishCenterSeed}
         onSeedConsumed={() => setPublishCenterSeed(null)}
         onClose={() => setPublishCenterOpen(false)}

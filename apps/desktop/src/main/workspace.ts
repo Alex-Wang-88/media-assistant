@@ -22,11 +22,13 @@ import {
   artifactSchema,
   type CreateProjectInput,
   type FilePreview,
+  type PersistedPublishDraftState,
   type PersonaRagConfirmInput,
   type PersonaRagDocument,
   type PersonaRagDroppedFile,
   type PersonaRagStatus,
   type Project,
+  persistedPublishDraftStateSchema,
   projectSchema,
 } from "@yoom/desktop-contracts";
 import { projectFrontmatterSchema, serializeMarkdown } from "@yoom/markdown-schemas";
@@ -45,6 +47,7 @@ const PROJECT_DIRECTORIES = [
 
 const PERSONA_RAG_DIRECTORY = "用户Persona RAG";
 const PERSONA_FILE_NAME = "persona.md";
+const PUBLISH_DRAFTS_FILE_NAME = "publish-drafts.json";
 
 const OUTPUT_KINDS = new Map<string, Artifact["kind"]>([
   ["文章", "article"],
@@ -336,6 +339,31 @@ export class Workspace {
     rmSync(path, { recursive: true, force: true });
     mkdirSync(path, { recursive: true });
     return this.personaRagStatus();
+  }
+
+  loadPublishDrafts(): PersistedPublishDraftState | null {
+    const path = join(this.root, ".yoom", PUBLISH_DRAFTS_FILE_NAME);
+    if (!existsSync(path) || !statSync(path).isFile()) return null;
+    try {
+      return persistedPublishDraftStateSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+    } catch {
+      const backup = join(
+        this.root,
+        ".yoom",
+        "backups",
+        `publish-drafts.corrupt.${Date.now()}.json`,
+      );
+      renameSync(path, backup);
+      return null;
+    }
+  }
+
+  savePublishDrafts(state: PersistedPublishDraftState): void {
+    const validated = persistedPublishDraftStateSchema.parse(state);
+    atomicWrite(
+      join(this.root, ".yoom", PUBLISH_DRAFTS_FILE_NAME),
+      `${JSON.stringify(validated, null, 2)}\n`,
+    );
   }
 
   importPersonaRagFiles(sourcePaths: readonly string[]): string[] {

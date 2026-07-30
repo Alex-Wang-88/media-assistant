@@ -12,10 +12,12 @@ import {
   ipcChannels,
   knowledgeSearchInputSchema,
   listOutputsInputSchema,
+  persistedPublishDraftStateSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
   personaRagSaveDocumentInputSchema,
   previewFileInputSchema,
+  publishDraftStateSchema,
   publishStartInputSchema,
   releasePublishImagesInputSchema,
   selectPublishImagesInputSchema,
@@ -143,6 +145,35 @@ export function registerIpc(access: WorkspaceAccess): void {
     requireWorkspace(access).resolveFile(input.projectId, input.artifactPath);
     return { jobId: randomUUID() };
   });
+  ipcMain.handle(ipcChannels.publishDraftsLoad, () => {
+    const stored = requireWorkspace(access).loadPublishDrafts();
+    if (!stored) return null;
+    return publishDraftStateSchema.parse({
+      ...stored,
+      drafts: stored.drafts.map((draft) => ({
+        ...draft,
+        images: draft.images.flatMap((image) => {
+          const restored = localPublishImage(image.path, image.id);
+          if (!restored) return [];
+          selectedPublishImages.set(restored.id, restored.path);
+          return [restored];
+        }),
+      })),
+    });
+  });
+  ipcMain.handle(ipcChannels.publishDraftsSave, (_event, raw) => {
+    const state = publishDraftStateSchema.parse(raw);
+    const stored = persistedPublishDraftStateSchema.parse({
+      ...state,
+      drafts: state.drafts.map((draft) => ({
+        ...draft,
+        images: draft.images.flatMap(({ previewUrl: _previewUrl, ...image }) =>
+          selectedPublishImages.get(image.id) === image.path ? [image] : [],
+        ),
+      })),
+    });
+    requireWorkspace(access).savePublishDrafts(stored);
+  });
   ipcMain.handle(ipcChannels.publishImagesSelect, async (event, raw) => {
     const input = selectPublishImagesInputSchema.parse(raw);
     const parent = BrowserWindow.fromWebContents(event.sender);
@@ -161,21 +192,10 @@ export function registerIpc(access: WorkspaceAccess): void {
       : await dialog.showOpenDialog(options);
     if (result.canceled) return [];
     return result.filePaths.slice(0, input.remaining).flatMap((path) => {
-      if (!existsSync(path) || !statSync(path).isFile()) return [];
-      const image = nativeImage.createFromPath(path);
-      if (image.isEmpty()) return [];
-      const id = randomUUID();
-      selectedPublishImages.set(id, path);
-      return [
-        {
-          id,
-          name: basename(path),
-          path,
-          mediaType: publishImageMediaType(path),
-          size: statSync(path).size,
-          previewUrl: image.resize({ width: 180, height: 180, quality: "good" }).toDataURL(),
-        },
-      ];
+      const image = localPublishImage(path);
+      if (!image) return [];
+      selectedPublishImages.set(image.id, path);
+      return [image];
     });
   });
   ipcMain.handle(ipcChannels.publishImagesRelease, (_event, raw) => {
@@ -229,6 +249,20 @@ function publishImageMediaType(path: string): string {
     ".gif": "image/gif",
   };
   return types[extname(path).toLowerCase()] ?? "image/*";
+}
+
+function localPublishImage(path: string, id: string = randomUUID()) {
+  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  const image = nativeImage.createFromPath(path);
+  if (image.isEmpty()) return null;
+  return {
+    id,
+    name: basename(path),
+    path,
+    mediaType: publishImageMediaType(path),
+    size: statSync(path).size,
+    previewUrl: image.resize({ width: 180, height: 180, quality: "good" }).toDataURL(),
+  };
 }
 
 function requireWorkspace(access: WorkspaceAccess): Workspace {

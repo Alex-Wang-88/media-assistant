@@ -15,6 +15,7 @@ import type {
   PersonaRagStatus,
   Project,
   PublishAutomationResult,
+  PublishDraftState,
   WorkspaceEntry,
 } from "@yoom/desktop-contracts";
 import { contextBridge, ipcRenderer } from "electron";
@@ -44,6 +45,8 @@ const channels = {
   chatSend: "chat:send",
   chatEvent: "chat:event",
   publishStart: "publish:start",
+  publishDraftsLoad: "publish-drafts:load",
+  publishDraftsSave: "publish-drafts:save",
   publishImagesSelect: "publish-images:select",
   publishImagesRelease: "publish-images:release",
   publishBilibiliAccountsList: "publish:bilibili-accounts-list",
@@ -177,6 +180,13 @@ const api: DesktopApi = {
       ipcRenderer
         .invoke(channels.publishStart, input)
         .then((value: unknown) => expectObject<{ jobId: string }>(value)),
+    loadDrafts: () =>
+      ipcRenderer.invoke(channels.publishDraftsLoad).then((value: unknown) => {
+        if (value === null) return null;
+        return expectObject<PublishDraftState>(value);
+      }),
+    saveDrafts: (state) =>
+      ipcRenderer.invoke(channels.publishDraftsSave, state).then(() => undefined),
     selectImages: (remaining) =>
       ipcRenderer
         .invoke(channels.publishImagesSelect, { remaining })

@@ -9,6 +9,7 @@ import {
   personaRagDroppedFilesSchema,
   personaRagStatusSchema,
   personaReportInputSchema,
+  publishDraftStateSchema,
   publishStartInputSchema,
 } from "../src";
 
@@ -69,6 +70,42 @@ describe("desktop contracts", () => {
         artifactPath: "文章/a.md",
         platform: "wechat",
         approved: false,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("validates a persistent publish draft collection and its selected draft", () => {
+    const draftId = crypto.randomUUID();
+    const state = {
+      version: 1,
+      selectedDraftId: draftId,
+      drafts: [
+        {
+          id: draftId,
+          title: "待发布内容",
+          platform: "bilibili",
+          bilibiliAccountId: null,
+          content: "关闭应用后仍需保留",
+          images: [],
+          source: "manual",
+          pinned: true,
+        },
+      ],
+      autoPublishByPlatform: {
+        wechat: false,
+        toutiao: false,
+        zhihu: false,
+        weibo: false,
+        bilibili: false,
+        xiaohongshu: false,
+      },
+    };
+
+    expect(publishDraftStateSchema.parse(state)).toEqual(state);
+    expect(
+      publishDraftStateSchema.safeParse({
+        ...state,
+        selectedDraftId: crypto.randomUUID(),
       }).success,
     ).toBe(false);
   });

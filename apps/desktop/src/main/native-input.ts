@@ -32,6 +32,34 @@ export async function replaceTextWithSystemShortcut(content: string): Promise<vo
   throw new Error("当前仅支持 macOS 和 Windows 的系统粘贴操作");
 }
 
+export async function deleteTextBackwardWithSystemKeyboard(count: number): Promise<void> {
+  if (!Number.isSafeInteger(count) || count < 1 || count > 2) {
+    throw new Error("要清理的 B 站尾部字符数量无效");
+  }
+  if (process.platform === "darwin") {
+    await runAppleScript(`
+      tell application "System Events"
+        repeat ${count} times
+          key code 51
+          delay 0.05
+        end repeat
+      end tell
+    `);
+    return;
+  }
+  if (process.platform === "win32") {
+    await runPowerShell(`
+      $shell = New-Object -ComObject WScript.Shell
+      1..${count} | ForEach-Object {
+        $shell.SendKeys('{BACKSPACE}')
+        Start-Sleep -Milliseconds 50
+      }
+    `);
+    return;
+  }
+  throw new Error("当前仅支持 macOS 和 Windows 的系统键盘操作");
+}
+
 export async function chooseFileInSystemDialog(path: string): Promise<void> {
   if (process.platform === "darwin") {
     clipboard.writeText(path);

@@ -4,6 +4,8 @@ import type {
   LocalPublishImage,
   Platform,
   PublishAutomationResult,
+  PublishDraft,
+  PublishDraftState,
 } from "@yoom/desktop-contracts";
 import { useEffect, useState } from "react";
 
@@ -24,23 +26,25 @@ export type PublishCenterSeed = {
   content: string;
 };
 
-type MemoryPublishDraft = {
-  id: string;
-  title: string;
-  platform: Platform | null;
-  bilibiliAccountId: string | null;
-  content: string;
-  images: LocalPublishImage[];
-  source: "manual" | "generated";
-  pinned: boolean;
+type MemoryPublishDraft = PublishDraft & {
   automationResult: PublishAutomationResult | null;
 };
 
 type PublishCenterProps = {
   open: boolean;
+  workspacePath: string | null;
   seed: PublishCenterSeed | null;
   onSeedConsumed(): void;
   onClose(): void;
+};
+
+const DEFAULT_AUTO_PUBLISH_BY_PLATFORM: Record<Platform, boolean> = {
+  wechat: false,
+  toutiao: false,
+  zhihu: false,
+  weibo: false,
+  bilibili: false,
+  xiaohongshu: false,
 };
 
 function createDraft(patch: Partial<Omit<MemoryPublishDraft, "id">> = {}): MemoryPublishDraft {
@@ -58,17 +62,19 @@ function createDraft(patch: Partial<Omit<MemoryPublishDraft, "id">> = {}): Memor
   };
 }
 
-export function PublishCenter({ open, seed, onSeedConsumed, onClose }: PublishCenterProps) {
+export function PublishCenter({
+  open,
+  workspacePath,
+  seed,
+  onSeedConsumed,
+  onClose,
+}: PublishCenterProps) {
   const [drafts, setDrafts] = useState<MemoryPublishDraft[]>(() => [createDraft()]);
   const [selectedDraftId, setSelectedDraftId] = useState(() => drafts[0]?.id ?? "");
-  const [autoPublishByPlatform, setAutoPublishByPlatform] = useState<Record<Platform, boolean>>({
-    wechat: false,
-    toutiao: false,
-    zhihu: false,
-    weibo: false,
-    bilibili: false,
-    xiaohongshu: false,
-  });
+  const [autoPublishByPlatform, setAutoPublishByPlatform] = useState<Record<Platform, boolean>>(
+    DEFAULT_AUTO_PUBLISH_BY_PLATFORM,
+  );
+  const [draftsLoaded, setDraftsLoaded] = useState(false);
   const [bilibiliAccounts, setBilibiliAccounts] = useState<BilibiliAccount[]>([]);
   const [accountsLoading, setAccountsLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -85,7 +91,7 @@ export function PublishCenter({ open, seed, onSeedConsumed, onClose }: PublishCe
   ];
 
   useEffect(() => {
-    if (!seed) return;
+    if (!seed || !draftsLoaded) return;
     const draft = createDraft({
       title: seed.title || "Agent 生成内容",
       content: seed.content,
@@ -97,7 +103,57 @@ export function PublishCenter({ open, seed, onSeedConsumed, onClose }: PublishCe
     setError(null);
     setClearConfirm(false);
     onSeedConsumed();
-  }, [onSeedConsumed, seed]);
+  }, [draftsLoaded, onSeedConsumed, seed]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDraftsLoaded(false);
+    if (!workspacePath) return;
+    window.desktop.publish
+      .loadDrafts()
+      .then((state) => {
+        if (cancelled) return;
+        const restoredDrafts = state?.drafts.map((draft) => ({
+          ...draft,
+          automationResult: null,
+        }));
+        const nextDrafts =
+          restoredDrafts && restoredDrafts.length > 0 ? restoredDrafts : [createDraft()];
+        const nextSelectedDraftId =
+          state && nextDrafts.some((draft) => draft.id === state.selectedDraftId)
+            ? state.selectedDraftId
+            : (nextDrafts[0]?.id ?? "");
+        setDrafts(nextDrafts);
+        setSelectedDraftId(nextSelectedDraftId);
+        setAutoPublishByPlatform(state?.autoPublishByPlatform ?? DEFAULT_AUTO_PUBLISH_BY_PLATFORM);
+        setDraftsLoaded(true);
+      })
+      .catch((reason: unknown) => {
+        if (cancelled) return;
+        const draft = createDraft();
+        setDrafts([draft]);
+        setSelectedDraftId(draft.id);
+        setAutoPublishByPlatform(DEFAULT_AUTO_PUBLISH_BY_PLATFORM);
+        setError(readableError(reason));
+        setDraftsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspacePath]);
+
+  useEffect(() => {
+    if (!draftsLoaded || !workspacePath || drafts.length === 0 || !selectedDraftId) return;
+    const state: PublishDraftState = {
+      version: 1,
+      selectedDraftId,
+      drafts: drafts.map(({ automationResult: _automationResult, ...draft }) => draft),
+      autoPublishByPlatform,
+    };
+    void window.desktop.publish.saveDrafts(state).catch((reason: unknown) => {
+      setError(`草稿自动保存失败：${readableError(reason)}`);
+    });
+  }, [autoPublishByPlatform, drafts, draftsLoaded, selectedDraftId, workspacePath]);
 
   useEffect(() => {
     if (!open) return;
@@ -218,6 +274,7 @@ export function PublishCenter({ open, seed, onSeedConsumed, onClose }: PublishCe
   });
 
   const busy =
+    !draftsLoaded ||
     selectImages.isPending ||
     openPlatform.isPending ||
     createBilibiliAccount.isPending ||
@@ -301,7 +358,7 @@ export function PublishCenter({ open, seed, onSeedConsumed, onClose }: PublishCe
       <header className="publish-center-header">
         <div>
           <strong>发布中心</strong>
-          <small>草稿仅暂存在当前应用中，关闭应用后不会保留</small>
+          <small>草稿自动保存到当前工作区，重新启动应用后仍会保留</small>
         </div>
         <button type="button" onClick={onClose}>
           返回创作工作区
@@ -433,7 +490,7 @@ export function PublishCenter({ open, seed, onSeedConsumed, onClose }: PublishCe
               <div className="publish-editor-heading">
                 <div>
                   <strong>编辑发布内容</strong>
-                  <small>切换草稿不会丢失当前应用中的文字和图片选择</small>
+                  <small>编辑内容和图片选择会自动保存到当前工作区</small>
                 </div>
                 <span
                   className={`publish-draft-status ${
