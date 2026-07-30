@@ -10,6 +10,7 @@ export const platformSchema = z.enum([
   "bilibili",
   "xiaohongshu",
 ]);
+export type Platform = z.infer<typeof platformSchema>;
 
 export const projectSchema = z.object({
   id: projectIdSchema,
@@ -42,40 +43,11 @@ export const personaRagStatusSchema = z.object({
   path: z.string().min(1),
 });
 export type PersonaRagStatus = z.infer<typeof personaRagStatusSchema>;
-export const personaProfileInputSchema = z.object({
-  brandOverview: z.string().trim().min(1).max(10_000),
-  audience: z.string().trim().min(1).max(10_000),
-  positioning: z.string().trim().min(1).max(10_000),
-  fixedFacts: z.string().trim().min(1).max(10_000),
-  contentBoundaries: z.string().trim().min(1).max(10_000),
+export const personaReportInputSchema = z.object({
+  markdown: z.string().trim().min(1).max(2_000_000),
 });
-export type PersonaProfileInput = z.infer<typeof personaProfileInputSchema>;
-const nullablePersonaValueSchema = z.string().trim().min(1).max(10_000).nullable();
-const personaValueListSchema = z.array(z.string().trim().min(1).max(10_000)).max(1_000);
-export const personaAgentProfileSchema = z.object({
-  industry: nullablePersonaValueSchema,
-  account_represents: nullablePersonaValueSchema,
-  business_type: nullablePersonaValueSchema,
-  offerings: personaValueListSchema,
-  target_audiences: personaValueListSchema,
-  customer_scenarios: personaValueListSchema,
-  memory_points: personaValueListSchema,
-  long_term_topics: personaValueListSchema,
-  fixed_facts: personaValueListSchema,
-  prohibited_content: personaValueListSchema,
-});
-export type PersonaAgentProfile = z.infer<typeof personaAgentProfileSchema>;
-export const personaAgentDocumentSchema = z.object({
-  status: z.literal("completed"),
-  profile: personaAgentProfileSchema,
-  current_step: z.literal("completed"),
-  question: z.null(),
-});
-export type PersonaAgentDocument = z.infer<typeof personaAgentDocumentSchema>;
-export const personaRagConfirmInputSchema = z.union([
-  personaProfileInputSchema,
-  personaAgentDocumentSchema,
-]);
+export type PersonaReportInput = z.infer<typeof personaReportInputSchema>;
+export const personaRagConfirmInputSchema = personaReportInputSchema;
 export type PersonaRagConfirmInput = z.infer<typeof personaRagConfirmInputSchema>;
 export const personaRagDocumentSchema = z.object({
   path: z.string().min(1),
@@ -220,6 +192,93 @@ export const publishStartInputSchema = z.object({
   approved: z.literal(true),
 });
 
+export const localPublishImageSchema = z.object({
+  id: z.uuid(),
+  name: z.string().trim().min(1).max(255),
+  path: z.string().min(1),
+  mediaType: z.string().startsWith("image/"),
+  size: z.number().int().nonnegative(),
+  previewUrl: z.string().startsWith("data:image/"),
+});
+export type LocalPublishImage = z.infer<typeof localPublishImageSchema>;
+
+export const publishDraftImageReferenceSchema = localPublishImageSchema.omit({ previewUrl: true });
+export type PublishDraftImageReference = z.infer<typeof publishDraftImageReferenceSchema>;
+
+export const publishDraftSchema = z.object({
+  id: z.uuid(),
+  title: z.string().max(80),
+  platform: platformSchema.nullable(),
+  bilibiliAccountId: z.uuid().nullable(),
+  content: z.string().max(100_000),
+  images: z.array(localPublishImageSchema).max(20),
+  source: z.enum(["manual", "generated"]),
+  pinned: z.boolean(),
+});
+export type PublishDraft = z.infer<typeof publishDraftSchema>;
+
+export const persistedPublishDraftSchema = publishDraftSchema.extend({
+  images: z.array(publishDraftImageReferenceSchema).max(20),
+});
+export type PersistedPublishDraft = z.infer<typeof persistedPublishDraftSchema>;
+
+const autoPublishByPlatformSchema = z.record(platformSchema, z.boolean());
+
+const publishDraftStateBaseSchema = z.object({
+  version: z.literal(1),
+  selectedDraftId: z.uuid(),
+  autoPublishByPlatform: autoPublishByPlatformSchema,
+});
+
+export const publishDraftStateSchema = publishDraftStateBaseSchema
+  .extend({
+    drafts: z.array(publishDraftSchema).min(1).max(100),
+  })
+  .refine(
+    (state) => state.drafts.some((draft) => draft.id === state.selectedDraftId),
+    "选中的发布草稿不存在",
+  );
+export type PublishDraftState = z.infer<typeof publishDraftStateSchema>;
+
+export const persistedPublishDraftStateSchema = publishDraftStateBaseSchema
+  .extend({
+    drafts: z.array(persistedPublishDraftSchema).min(1).max(100),
+  })
+  .refine(
+    (state) => state.drafts.some((draft) => draft.id === state.selectedDraftId),
+    "选中的发布草稿不存在",
+  );
+export type PersistedPublishDraftState = z.infer<typeof persistedPublishDraftStateSchema>;
+
+export const selectPublishImagesInputSchema = z.object({
+  remaining: z.number().int().min(1).max(20),
+});
+export const releasePublishImagesInputSchema = z.object({
+  ids: z.array(z.uuid()).max(20),
+});
+export const bilibiliAccountSchema = z.object({
+  id: z.uuid(),
+  name: z.string().trim().min(1).max(40),
+});
+export type BilibiliAccount = z.infer<typeof bilibiliAccountSchema>;
+export const deleteBilibiliAccountInputSchema = z.object({
+  accountId: z.uuid(),
+});
+export const bilibiliFillInputSchema = z.object({
+  accountId: z.uuid(),
+  title: z.string().max(80),
+  content: z.string().trim().min(1).max(100_000),
+  imageIds: z.array(z.uuid()).max(20),
+  autoPublish: z.boolean().default(false),
+});
+export type BilibiliFillInput = z.infer<typeof bilibiliFillInputSchema>;
+
+export const publishAutomationResultSchema = z.object({
+  state: z.enum(["waiting_for_login", "filled", "published", "needs_attention"]),
+  message: z.string().min(1),
+});
+export type PublishAutomationResult = z.infer<typeof publishAutomationResultSchema>;
+
 export const deviceCommandSchema = z.discriminatedUnion("type", [
   z.object({ id: z.uuid(), type: z.literal("task.create"), payload: createProjectInputSchema }),
   z.object({
@@ -305,6 +364,15 @@ export interface DesktopApi {
   };
   publish: {
     start(input: z.infer<typeof publishStartInputSchema>): Promise<{ jobId: string }>;
+    loadDrafts(): Promise<PublishDraftState | null>;
+    saveDrafts(state: PublishDraftState): Promise<void>;
+    selectImages(remaining: number): Promise<LocalPublishImage[]>;
+    releaseImages(ids: string[]): Promise<void>;
+    listBilibiliAccounts(): Promise<BilibiliAccount[]>;
+    createBilibiliAccount(): Promise<BilibiliAccount>;
+    deleteBilibiliAccount(accountId: string): Promise<BilibiliAccount[]>;
+    openBilibili(input: BilibiliFillInput): Promise<PublishAutomationResult>;
+    fillBilibili(input: BilibiliFillInput): Promise<PublishAutomationResult>;
   };
 }
 
@@ -332,4 +400,13 @@ export const ipcChannels = {
   chatSend: "chat:send",
   chatEvent: "chat:event",
   publishStart: "publish:start",
+  publishDraftsLoad: "publish-drafts:load",
+  publishDraftsSave: "publish-drafts:save",
+  publishImagesSelect: "publish-images:select",
+  publishImagesRelease: "publish-images:release",
+  publishBilibiliAccountsList: "publish:bilibili-accounts-list",
+  publishBilibiliAccountCreate: "publish:bilibili-account-create",
+  publishBilibiliAccountDelete: "publish:bilibili-account-delete",
+  publishBilibiliOpen: "publish:bilibili-open",
+  publishBilibiliFill: "publish:bilibili-fill",
 } as const;

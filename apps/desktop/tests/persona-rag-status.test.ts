@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
-import { validatePersonaProposal } from "../src/main/persona-agent";
 import { Workspace } from "../src/main/workspace";
 
 let workspace: Workspace | null = null;
@@ -52,29 +51,18 @@ afterEach(() => {
 });
 
 describe("Persona RAG local file readiness", () => {
-  const profile = {
-    brandOverview: "社区咖啡店，提供咖啡和社区活动",
-    audience: "附近居民与上班族",
-    positioning: "突出手冲咖啡和友好的社区空间",
-    fixedFacts: "每天 8:00 至 20:00 营业",
-    contentBoundaries: "未经确认不发布优惠信息",
-  };
-  const completedDocument = {
-    status: "completed" as const,
-    profile: {
-      industry: "餐饮与食品",
-      account_represents: "门店",
-      business_type: "社区咖啡店",
-      offerings: ["手冲咖啡", "社区活动"],
-      target_audiences: ["附近居民", "上班族"],
-      customer_scenarios: ["通勤", "周末休闲"],
-      memory_points: ["友好的社区空间"],
-      long_term_topics: ["咖啡知识"],
-      fixed_facts: ["每天 8:00 至 20:00 营业"],
-      prohibited_content: ["未经确认不发布优惠信息"],
-    },
-    current_step: "completed" as const,
-    question: null,
+  const report = {
+    markdown: [
+      "# 用户画像",
+      "",
+      "## 你卖什么",
+      "",
+      "社区咖啡与活动。",
+      "",
+      "## 卖给谁",
+      "",
+      "附近居民与上班族。",
+    ].join("\n"),
   };
 
   it("becomes ready only after the guided profile is built and resets when it is deleted", () => {
@@ -88,47 +76,36 @@ describe("Persona RAG local file readiness", () => {
     writeFileSync(referenceFile, "# 只有参考资料\n", "utf8");
     expect(workspace.personaRagStatus()).toMatchObject({ ready: false, fileCount: 1 });
 
-    const toolResult = validatePersonaProposal({
-      type: "tool-call",
-      requestId: crypto.randomUUID(),
-      toolCallId: "propose-persona",
-      name: "propose_persona",
-      arguments: JSON.stringify(profile),
-      status: "requested",
-    });
-    expect(toolResult).toMatchObject({ type: "tool-call", status: "completed" });
     expect(workspace.personaRagStatus()).toMatchObject({ ready: false, fileCount: 1 });
 
-    workspace.buildPersonaRag(profile);
+    workspace.buildPersonaRag(report);
     expect(workspace.personaRagStatus()).toMatchObject({ ready: true, fileCount: 2 });
     expect(workspace.personaRagReferenceContext()).toContain("当前 Persona 主文件");
-    expect(workspace.personaRagReferenceContext()).toContain("社区咖啡店");
+    expect(workspace.personaRagReferenceContext()).toContain("社区咖啡与活动");
 
     unlinkSync(join(directory, "persona.md"));
     expect(workspace.personaRagStatus()).toMatchObject({ ready: false, fileCount: 1 });
   });
 
-  it("converts the completed Agent JSON to readable Markdown and saves user edits", () => {
+  it("preserves the confirmed Agent report as Markdown and saves later user edits", () => {
     root = mkdtempSync(join(tmpdir(), "yoom-persona-document-"));
     workspace = new Workspace(root);
 
-    workspace.buildPersonaRag(completedDocument);
+    workspace.buildPersonaRag(report);
     const document = workspace.readPersonaDocument();
     expect(document.path).toBe(join(workspace.personaRagPath(), "persona.md"));
     expect(document.content).toContain("# 用户画像");
-    expect(document.content).toContain("- 所属行业：餐饮与食品");
-    expect(document.content).toContain("## 目标人群");
-    expect(document.content).toContain("- 附近居民");
-    expect(document.content).not.toContain('"status": "completed"');
+    expect(document.content).toContain("## 你卖什么");
+    expect(document.content).toContain("社区咖啡与活动");
 
     workspace.savePersonaDocument(`${document.content}\n用户补充内容`);
     expect(workspace.readPersonaDocument().content).toContain("用户补充内容");
   });
 
-  it("deletes the local Persona and references into recoverable workspace trash", () => {
+  it("permanently deletes the local Persona and references without creating trash", () => {
     root = mkdtempSync(join(tmpdir(), "yoom-persona-delete-"));
     workspace = new Workspace(root);
-    workspace.buildPersonaRag(completedDocument);
+    workspace.buildPersonaRag(report);
     workspace.importDroppedPersonaRagFiles([
       { name: "brand.txt", data: new TextEncoder().encode("品牌资料") },
     ]);
@@ -136,10 +113,7 @@ describe("Persona RAG local file readiness", () => {
     expect(workspace.deletePersonaRag()).toMatchObject({ ready: false, fileCount: 0 });
     expect(readdirSync(workspace.personaRagPath())).toEqual([]);
     const trashRoot = join(root, ".yoom", "trash", "用户Persona RAG");
-    expect(existsSync(trashRoot)).toBe(true);
-    const deletedDirectories = readdirSync(trashRoot);
-    expect(deletedDirectories).toHaveLength(1);
-    expect(existsSync(join(trashRoot, deletedDirectories[0] as string, "persona.md"))).toBe(true);
+    expect(existsSync(trashRoot)).toBe(false);
   });
 
   it("uploads nested reference material without treating it as a completed Persona", () => {
@@ -182,21 +156,5 @@ describe("Persona RAG local file readiness", () => {
     expect(context).toContain("[本地参考资料：brand.docx]");
     expect(context).toContain("星巴克工业园区门店，主营咖啡和简餐");
     expect(context).not.toContain("当前格式仅提供文件名");
-  });
-
-  it("rejects an invalid Agent proposal without creating the Persona file", () => {
-    root = mkdtempSync(join(tmpdir(), "yoom-persona-rag-invalid-"));
-    workspace = new Workspace(root);
-    const result = validatePersonaProposal({
-      type: "tool-call",
-      requestId: crypto.randomUUID(),
-      toolCallId: "proposal-invalid",
-      name: "propose_persona",
-      arguments: '{"brandOverview":"缺少其他字段"}',
-      status: "requested",
-    });
-
-    expect(result).toMatchObject({ type: "tool-call", status: "failed" });
-    expect(workspace.personaRagStatus().ready).toBe(false);
   });
 });

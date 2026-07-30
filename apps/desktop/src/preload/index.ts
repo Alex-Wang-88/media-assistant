@@ -1,21 +1,25 @@
 import type {
   AgentStatus,
   Artifact,
+  BilibiliAccount,
   ChatSendInput,
   ChatStreamEvent,
   CreateProjectInput,
   DesktopApi,
   FilePreview,
+  LocalPublishImage,
   PersonaRagConfirmInput,
   PersonaRagDocument,
   PersonaRagDroppedFile,
   PersonaRagImportResult,
   PersonaRagStatus,
   Project,
+  PublishAutomationResult,
+  PublishDraftState,
   WorkspaceEntry,
 } from "@yoom/desktop-contracts";
 import { contextBridge, ipcRenderer } from "electron";
-import { expectChatStreamEvent } from "./chat-event";
+import { createChatEventGate } from "./chat-event";
 
 const channels = {
   workspaceSelect: "workspace:select",
@@ -41,6 +45,15 @@ const channels = {
   chatSend: "chat:send",
   chatEvent: "chat:event",
   publishStart: "publish:start",
+  publishDraftsLoad: "publish-drafts:load",
+  publishDraftsSave: "publish-drafts:save",
+  publishImagesSelect: "publish-images:select",
+  publishImagesRelease: "publish-images:release",
+  publishBilibiliAccountsList: "publish:bilibili-accounts-list",
+  publishBilibiliAccountCreate: "publish:bilibili-account-create",
+  publishBilibiliAccountDelete: "publish:bilibili-account-delete",
+  publishBilibiliOpen: "publish:bilibili-open",
+  publishBilibiliFill: "publish:bilibili-fill",
 } as const;
 
 function expectString(value: unknown): string {
@@ -149,13 +162,14 @@ const api: DesktopApi = {
   chat: {
     status: () => ipcRenderer.invoke(channels.chatStatus).then(expectAgentStatus),
     send: async (input: ChatSendInput, onEvent: (event: ChatStreamEvent) => void) => {
+      const gate = createChatEventGate(input.requestId, onEvent);
       const listener = (_event: Electron.IpcRendererEvent, raw: unknown) => {
-        const event = expectChatStreamEvent(raw);
-        if (event.requestId === input.requestId) onEvent(event);
+        gate.handle(raw);
       };
       ipcRenderer.on(channels.chatEvent, listener);
       try {
         await ipcRenderer.invoke(channels.chatSend, input);
+        await gate.waitForTerminal();
       } finally {
         ipcRenderer.removeListener(channels.chatEvent, listener);
       }
@@ -166,6 +180,39 @@ const api: DesktopApi = {
       ipcRenderer
         .invoke(channels.publishStart, input)
         .then((value: unknown) => expectObject<{ jobId: string }>(value)),
+    loadDrafts: () =>
+      ipcRenderer.invoke(channels.publishDraftsLoad).then((value: unknown) => {
+        if (value === null) return null;
+        return expectObject<PublishDraftState>(value);
+      }),
+    saveDrafts: (state) =>
+      ipcRenderer.invoke(channels.publishDraftsSave, state).then(() => undefined),
+    selectImages: (remaining) =>
+      ipcRenderer
+        .invoke(channels.publishImagesSelect, { remaining })
+        .then((value: unknown) => expectArray<LocalPublishImage>(value)),
+    releaseImages: (ids) =>
+      ipcRenderer.invoke(channels.publishImagesRelease, { ids }).then(() => undefined),
+    listBilibiliAccounts: () =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliAccountsList)
+        .then((value: unknown) => expectArray<BilibiliAccount>(value)),
+    createBilibiliAccount: () =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliAccountCreate)
+        .then((value: unknown) => expectObject<BilibiliAccount>(value)),
+    deleteBilibiliAccount: (accountId) =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliAccountDelete, { accountId })
+        .then((value: unknown) => expectArray<BilibiliAccount>(value)),
+    openBilibili: (input) =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliOpen, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    fillBilibili: (input) =>
+      ipcRenderer
+        .invoke(channels.publishBilibiliFill, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
   },
 };
 

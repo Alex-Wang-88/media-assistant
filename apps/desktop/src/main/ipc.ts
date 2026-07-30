@@ -1,22 +1,43 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, statSync } from "node:fs";
+import { basename, extname } from "node:path";
 import {
   activateWorkspaceInputSchema,
+  bilibiliFillInputSchema,
   chatSendInputSchema,
   createProjectInputSchema,
+  deleteBilibiliAccountInputSchema,
   deleteProjectInputSchema,
   fileActionInputSchema,
   ipcChannels,
   knowledgeSearchInputSchema,
   listOutputsInputSchema,
+  persistedPublishDraftStateSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
   personaRagSaveDocumentInputSchema,
   previewFileInputSchema,
+  publishDraftStateSchema,
   publishStartInputSchema,
+  releasePublishImagesInputSchema,
+  selectPublishImagesInputSchema,
 } from "@yoom/desktop-contracts";
-import { BrowserWindow, dialog, ipcMain, type OpenDialogOptions, shell } from "electron";
+import {
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  type OpenDialogOptions,
+  shell,
+} from "electron";
+import {
+  continueFillingBilibili,
+  createBilibiliAccount,
+  deleteBilibiliAccount,
+  listBilibiliAccounts,
+  openAndFillBilibili,
+} from "./bilibili-publisher";
 import { getAgentStatus, streamChat } from "./chat-client";
-import { validatePersonaProposal } from "./persona-agent";
 import type { Workspace } from "./workspace";
 
 type WorkspaceAccess = {
@@ -25,6 +46,8 @@ type WorkspaceAccess = {
   list(): { name: string; path: string; isDefault: boolean }[];
   activate(path: string): Promise<Workspace>;
 };
+
+const selectedPublishImages = new Map<string, string>();
 
 export function registerIpc(access: WorkspaceAccess): void {
   ipcMain.handle(ipcChannels.workspaceCurrent, () => access.current()?.root ?? null);
@@ -114,15 +137,7 @@ export function registerIpc(access: WorkspaceAccess): void {
           }
         : chatInput;
     await streamChat(agentInput, (streamEvent) => {
-      let outgoingEvent = streamEvent;
-      if (
-        chatInput.mode === "persona_setup" &&
-        streamEvent.type === "tool-call" &&
-        streamEvent.name === "propose_persona"
-      ) {
-        outgoingEvent = validatePersonaProposal(streamEvent);
-      }
-      if (!event.sender.isDestroyed()) event.sender.send(ipcChannels.chatEvent, outgoingEvent);
+      if (!event.sender.isDestroyed()) event.sender.send(ipcChannels.chatEvent, streamEvent);
     });
   });
   ipcMain.handle(ipcChannels.publishStart, (_event, raw) => {
@@ -130,6 +145,124 @@ export function registerIpc(access: WorkspaceAccess): void {
     requireWorkspace(access).resolveFile(input.projectId, input.artifactPath);
     return { jobId: randomUUID() };
   });
+  ipcMain.handle(ipcChannels.publishDraftsLoad, () => {
+    const stored = requireWorkspace(access).loadPublishDrafts();
+    if (!stored) return null;
+    return publishDraftStateSchema.parse({
+      ...stored,
+      drafts: stored.drafts.map((draft) => ({
+        ...draft,
+        images: draft.images.flatMap((image) => {
+          const restored = localPublishImage(image.path, image.id);
+          if (!restored) return [];
+          selectedPublishImages.set(restored.id, restored.path);
+          return [restored];
+        }),
+      })),
+    });
+  });
+  ipcMain.handle(ipcChannels.publishDraftsSave, (_event, raw) => {
+    const state = publishDraftStateSchema.parse(raw);
+    const stored = persistedPublishDraftStateSchema.parse({
+      ...state,
+      drafts: state.drafts.map((draft) => ({
+        ...draft,
+        images: draft.images.flatMap(({ previewUrl: _previewUrl, ...image }) =>
+          selectedPublishImages.get(image.id) === image.path ? [image] : [],
+        ),
+      })),
+    });
+    requireWorkspace(access).savePublishDrafts(stored);
+  });
+  ipcMain.handle(ipcChannels.publishImagesSelect, async (event, raw) => {
+    const input = selectPublishImagesInputSchema.parse(raw);
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const options: OpenDialogOptions = {
+      title: "选择发布配图",
+      properties: ["openFile", "multiSelections"],
+      filters: [
+        {
+          name: "图片",
+          extensions: ["png", "jpg", "jpeg", "webp", "gif"],
+        },
+      ],
+    };
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled) return [];
+    return result.filePaths.slice(0, input.remaining).flatMap((path) => {
+      const image = localPublishImage(path);
+      if (!image) return [];
+      selectedPublishImages.set(image.id, path);
+      return [image];
+    });
+  });
+  ipcMain.handle(ipcChannels.publishImagesRelease, (_event, raw) => {
+    const input = releasePublishImagesInputSchema.parse(raw);
+    for (const id of input.ids) selectedPublishImages.delete(id);
+  });
+  ipcMain.handle(ipcChannels.publishBilibiliAccountsList, () => listBilibiliAccounts());
+  ipcMain.handle(ipcChannels.publishBilibiliAccountCreate, () => createBilibiliAccount());
+  ipcMain.handle(ipcChannels.publishBilibiliAccountDelete, async (_event, raw) => {
+    const input = deleteBilibiliAccountInputSchema.parse(raw);
+    return deleteBilibiliAccount(input.accountId);
+  });
+  ipcMain.handle(ipcChannels.publishBilibiliOpen, async (_event, raw) => {
+    const input = bilibiliFillInputSchema.parse(raw);
+    return openAndFillBilibili(
+      input.accountId,
+      input.title,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
+      input.autoPublish,
+    );
+  });
+  ipcMain.handle(ipcChannels.publishBilibiliFill, async (_event, raw) => {
+    const input = bilibiliFillInputSchema.parse(raw);
+    return continueFillingBilibili(
+      input.accountId,
+      input.title,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
+      input.autoPublish,
+    );
+  });
+}
+
+function resolveSelectedPublishImages(ids: readonly string[]): string[] {
+  return ids.map((id) => {
+    const path = selectedPublishImages.get(id);
+    if (!path || !existsSync(path) || !statSync(path).isFile()) {
+      throw new Error("选中的本地图片已移动或删除，请重新选择");
+    }
+    return path;
+  });
+}
+
+function publishImageMediaType(path: string): string {
+  const types: Record<string, string> = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+  };
+  return types[extname(path).toLowerCase()] ?? "image/*";
+}
+
+function localPublishImage(path: string, id: string = randomUUID()) {
+  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  const image = nativeImage.createFromPath(path);
+  if (image.isEmpty()) return null;
+  return {
+    id,
+    name: basename(path),
+    path,
+    mediaType: publishImageMediaType(path),
+    size: statSync(path).size,
+    previewUrl: image.resize({ width: 180, height: 180, quality: "good" }).toDataURL(),
+  };
 }
 
 function requireWorkspace(access: WorkspaceAccess): Workspace {
