@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Artifact,
   ChatMessage,
+  PersonaFlowState,
   PersonaRagConfirmInput,
   PersonaRagImportResult,
   Project,
 } from "@yoom/desktop-contracts";
+import { personaStageWelcome } from "@yoom/desktop-contracts";
 import {
   memo,
   type DragEvent as ReactDragEvent,
@@ -93,6 +95,7 @@ export function App() {
   const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
   const [personaSetupOpen, setPersonaSetupOpen] = useState(false);
   const [personaSetupMessages, setPersonaSetupMessages] = useState<ConversationMessage[]>([]);
+  const [personaFlow, setPersonaFlow] = useState<PersonaFlowState | null>(null);
   const [personaReportDraft, setPersonaReportDraft] = useState<string | null>(null);
   const [personaDocumentOpen, setPersonaDocumentOpen] = useState(false);
   const [personaDocumentPath, setPersonaDocumentPath] = useState("");
@@ -105,7 +108,6 @@ export function App() {
   const [contentAgentType, setContentAgentType] = useState<ContentAgentType | null>(null);
   const [publishCenterOpen, setPublishCenterOpen] = useState(false);
   const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed | null>(null);
-  const personaSessionId = useRef(crypto.randomUUID());
   const skipNextProjectReset = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const activeScrollItems = useMemo(
@@ -231,6 +233,7 @@ export function App() {
       await personaRag.refetch();
       setPersonaSetupOpen(false);
       setPersonaSetupMessages([]);
+      setPersonaFlow(null);
       setPersonaReportDraft(null);
       setMessage("");
     },
@@ -248,6 +251,7 @@ export function App() {
       setPersonaDeleteError(null);
       setPersonaSetupOpen(false);
       setPersonaSetupMessages([]);
+      setPersonaFlow(null);
       setPersonaReportDraft(null);
       setPersonaDocumentOpen(false);
       setPersonaDocumentPath("");
@@ -302,17 +306,11 @@ export function App() {
   const sendPersonaAgentMessage = async (
     prompt: string,
     showUserMessage = true,
-    previousMessages = personaSetupMessages,
     includeReferences = false,
   ) => {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt || isStreaming) return;
-    const requestId = crypto.randomUUID();
     const assistantId = crypto.randomUUID();
-    const history: ChatMessage[] = previousMessages
-      .filter((entry) => !entry.modelExcluded)
-      .map((entry) => ({ role: entry.role, content: entry.modelContent ?? entry.content }))
-      .filter((entry) => entry.content.trim());
     const userEntry = {
       ...personaSetupMessage("user", normalizedPrompt),
       hidden: !showUserMessage,
@@ -328,35 +326,40 @@ export function App() {
     if (showUserMessage) setPersonaReportDraft(null);
     setMessage("");
     setIsStreaming(true);
-    let rawAssistantContent = "";
     try {
-      await window.desktop.chat.send(
-        {
-          requestId,
-          sessionId: personaSessionId.current,
-          messages: [...history, { role: "user", content: normalizedPrompt }],
-          knowledgeEnabled: true,
-          strategyEnabled: false,
-          autoExecute: false,
-          mode: "persona_setup",
-          includePersonaReferences: includeReferences,
-        },
-        (event) => {
-          if (event.type === "text-delta") rawAssistantContent += event.delta;
-          setPersonaSetupMessages((current) => applyChatEvent(current, assistantId, event));
-        },
-      );
-      const report = parsePersonaReport(rawAssistantContent);
+      const result = await window.desktop.personaFlow.turn({
+        userMessage: normalizedPrompt,
+        includePersonaReferences: includeReferences,
+      });
+      setPersonaFlow(result.flow);
+      let assistantContent = "";
+      if (result.response.action === "ask_question") {
+        assistantContent = result.response.question ?? "";
+      } else if (result.response.action === "present_conclusion") {
+        assistantContent = result.response.conclusion ?? "";
+      } else if (result.response.action === "complete_stage") {
+        assistantContent = personaStageWelcome(result.flow.currentStage);
+      } else if (result.response.action === "generate_final_summary") {
+        assistantContent = "五个阶段已完成，用户画像报告已生成。";
+      }
       requestLatestMessage(true);
-      setPersonaReportDraft(report);
-      if (rawAssistantContent) {
-        setPersonaSetupMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? { ...entry, content: rawAssistantContent, status: "complete" }
-              : entry,
-          ),
-        );
+      setPersonaSetupMessages((current) =>
+        current.map((entry) =>
+          entry.id === assistantId
+            ? {
+                ...entry,
+                content: assistantContent,
+                status: "complete",
+                modelExcluded: result.response.action !== "ask_question",
+              }
+            : entry,
+        ),
+      );
+      if (result.response.action === "generate_final_summary" && result.response.finalSummary) {
+        const report =
+          parsePersonaReport(result.response.finalSummary) ??
+          `# 用户画像\n\n${result.response.finalSummary.trim()}`;
+        setPersonaReportDraft(report);
       }
     } catch (error) {
       const errorMessage = readableError(error);
@@ -370,19 +373,61 @@ export function App() {
     }
   };
 
-  const beginPersonaSetup = () => {
-    personaSessionId.current = crypto.randomUUID();
+  const beginPersonaSetup = async () => {
+    if (isStreaming) return;
     setPersonaDocumentOpen(false);
     setPersonaSetupOpen(true);
-    setPersonaSetupMessages([
-      personaSetupMessage(
-        "assistant",
-        "你好，欢迎使用用户画像助手。我会通过对话了解你的业务并生成可修改的用户画像报告。请先告诉我，你所在的行业是什么？",
-        true,
-      ),
-    ]);
+    setPersonaSetupMessages([]);
     setPersonaReportDraft(null);
     setMessage("");
+    setIsStreaming(true);
+    try {
+      const existing = await window.desktop.personaFlow.load();
+      const flow = existing ?? (await window.desktop.personaFlow.start());
+      setPersonaFlow(flow);
+      if (flow.flowCompleted && flow.finalSummary) {
+        setPersonaReportDraft(
+          parsePersonaReport(flow.finalSummary) ?? `# 用户画像\n\n${flow.finalSummary.trim()}`,
+        );
+      }
+      const current = flow.stages[flow.currentStage - 1];
+      const welcome = current?.lastAssistantMessage ?? personaStageWelcome(flow.currentStage);
+      setPersonaSetupMessages([personaSetupMessage("assistant", welcome, true)]);
+    } catch (error) {
+      setPersonaSetupMessages([
+        {
+          ...personaSetupMessage("assistant", ""),
+          status: "error",
+          error: readableError(error),
+        },
+      ]);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  const restartPersonaSetup = async () => {
+    if (isStreaming) return;
+    setMessage("");
+    setPersonaReportDraft(null);
+    setIsStreaming(true);
+    try {
+      const flow = await window.desktop.personaFlow.start();
+      setPersonaFlow(flow);
+      setPersonaSetupMessages([
+        personaSetupMessage("assistant", personaStageWelcome(flow.currentStage), true),
+      ]);
+    } catch (error) {
+      setPersonaSetupMessages([
+        {
+          ...personaSetupMessage("assistant", ""),
+          status: "error",
+          error: readableError(error),
+        },
+      ]);
+    } finally {
+      setIsStreaming(false);
+    }
   };
 
   const selectContentAgent = (type: ContentAgentType) => {
@@ -402,22 +447,19 @@ export function App() {
     setAgentRequestFailed(false);
   };
 
-  function continuePersonaSetupAfterImport(
-    names: string[],
-    previousMessages = personaSetupMessages,
-  ) {
+  function continuePersonaSetupAfterImport(names: string[]) {
     const prompt =
       `我刚添加了这些本地参考资料：${names.join("、")}。` +
       "资料正文已经由客户端在本地读取，并将在本次请求中一并提供。" +
       "请先分析已有资料：信息足够就继续形成用户画像报告；仍有关键缺失时，只追问当前最必要的问题。";
     if (!personaSetupOpen) {
-      setPersonaSetupOpen(true);
-      setPersonaSetupMessages([]);
-      setMessage("");
-      void sendPersonaAgentMessage(prompt, false, [], true);
+      void (async () => {
+        await beginPersonaSetup();
+        await sendPersonaAgentMessage(prompt, false, true);
+      })();
       return;
     }
-    void sendPersonaAgentMessage(prompt, false, previousMessages, true);
+    void sendPersonaAgentMessage(prompt, false, true);
   }
 
   useLayoutEffect(() => {
@@ -742,7 +784,7 @@ export function App() {
               }
               onClick={() => {
                 if (personaRag.data?.ready) readPersonaDocument.mutate();
-                else beginPersonaSetup();
+                else void beginPersonaSetup();
               }}
             >
               {personaSetupOpen
@@ -880,7 +922,20 @@ export function App() {
                 <header>
                   <div>
                     <strong>建立用户画像</strong>
-                    <small>Agent 会根据已有回答和本地资料动态追问</small>
+                    <small>
+                      {personaFlow
+                        ? `当前为第 ${personaFlow.currentStage}/5 阶段`
+                        : "正在准备五阶段画像流程"}
+                    </small>
+                  </div>
+                  <div className="persona-setup-actions">
+                    <button
+                      type="button"
+                      disabled={isStreaming}
+                      onClick={() => void restartPersonaSetup()}
+                    >
+                      重新开始画像
+                    </button>
                   </div>
                 </header>
                 <div className="message-list" aria-live="polite">
@@ -976,7 +1031,7 @@ export function App() {
                   type="button"
                   className="persona-rag-build"
                   disabled={personaRag.isPending}
-                  onClick={beginPersonaSetup}
+                  onClick={() => void beginPersonaSetup()}
                 >
                   <Icon name="spark" />
                   <span>
@@ -1027,7 +1082,9 @@ export function App() {
           <div className="composer-wrap">
             {personaSetupOpen ? (
               <div className="persona-setup-composer-label">
-                正在建立用户画像 · 可随时上传补充资料
+                正在建立用户画像
+                {personaFlow ? ` · 第 ${personaFlow.currentStage}/5 阶段` : ""}
+                {" · 可随时上传补充资料"}
               </div>
             ) : null}
             <fieldset

@@ -23,12 +23,14 @@ import {
   type CreateProjectInput,
   type FilePreview,
   type PersistedPublishDraftState,
+  type PersonaFlowState,
   type PersonaRagConfirmInput,
   type PersonaRagDocument,
   type PersonaRagDroppedFile,
   type PersonaRagStatus,
   type Project,
   persistedPublishDraftStateSchema,
+  personaFlowStateSchema,
   projectSchema,
 } from "@yoom/desktop-contracts";
 import { projectFrontmatterSchema, serializeMarkdown } from "@yoom/markdown-schemas";
@@ -47,6 +49,7 @@ const PROJECT_DIRECTORIES = [
 
 const PERSONA_RAG_DIRECTORY = "用户Persona RAG";
 const PERSONA_FILE_NAME = "persona.md";
+const PERSONA_FLOW_FILE_NAME = "persona-flow.json";
 const PUBLISH_DRAFTS_FILE_NAME = "publish-drafts.json";
 
 const OUTPUT_KINDS = new Map<string, Artifact["kind"]>([
@@ -333,29 +336,35 @@ export class Workspace {
     return this.personaRagStatus();
   }
 
+  loadPersonaFlow(): PersonaFlowState | null {
+    return this.loadRecoverableJson(PERSONA_FLOW_FILE_NAME, (value) =>
+      personaFlowStateSchema.parse(value),
+    );
+  }
+
+  savePersonaFlow(state: PersonaFlowState): void {
+    const validated = personaFlowStateSchema.parse(state);
+    atomicWrite(
+      join(this.root, ".yoom", PERSONA_FLOW_FILE_NAME),
+      `${JSON.stringify(validated, null, 2)}\n`,
+    );
+  }
+
   deletePersonaRag(): PersonaRagStatus {
     const path = this.personaRagPath();
-    if (countVisibleFiles(path) === 0) return this.personaRagStatus();
-    rmSync(path, { recursive: true, force: true });
-    mkdirSync(path, { recursive: true });
+    if (countVisibleFiles(path) > 0) {
+      rmSync(path, { recursive: true, force: true });
+      mkdirSync(path, { recursive: true });
+    }
+    const flowPath = join(this.root, ".yoom", PERSONA_FLOW_FILE_NAME);
+    if (existsSync(flowPath)) unlinkSync(flowPath);
     return this.personaRagStatus();
   }
 
   loadPublishDrafts(): PersistedPublishDraftState | null {
-    const path = join(this.root, ".yoom", PUBLISH_DRAFTS_FILE_NAME);
-    if (!existsSync(path) || !statSync(path).isFile()) return null;
-    try {
-      return persistedPublishDraftStateSchema.parse(JSON.parse(readFileSync(path, "utf8")));
-    } catch {
-      const backup = join(
-        this.root,
-        ".yoom",
-        "backups",
-        `publish-drafts.corrupt.${Date.now()}.json`,
-      );
-      renameSync(path, backup);
-      return null;
-    }
+    return this.loadRecoverableJson(PUBLISH_DRAFTS_FILE_NAME, (value) =>
+      persistedPublishDraftStateSchema.parse(value),
+    );
   }
 
   savePublishDrafts(state: PersistedPublishDraftState): void {
@@ -516,6 +525,19 @@ export class Workspace {
       const path = join(root, entry.name);
       if (entry.isDirectory()) this.walk(path, onFile);
       else if (!entry.name.endsWith(".tmp")) onFile(path);
+    }
+  }
+
+  private loadRecoverableJson<T>(fileName: string, parse: (value: unknown) => T): T | null {
+    const path = join(this.root, ".yoom", fileName);
+    if (!existsSync(path) || !statSync(path).isFile()) return null;
+    try {
+      return parse(JSON.parse(readFileSync(path, "utf8")));
+    } catch {
+      const stem = fileName.replace(/\.json$/i, "");
+      const backup = join(this.root, ".yoom", "backups", `${stem}.corrupt.${Date.now()}.json`);
+      renameSync(path, backup);
+      return null;
     }
   }
 

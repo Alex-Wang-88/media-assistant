@@ -42,6 +42,7 @@ class ShareTransport(Protocol):
         messages: list[dict[str, object]],
         tools: list[dict[str, object]] | None = None,
         tool_choice: str | None = None,
+        session_id: str | None = None,
     ) -> SharedCompletion: ...
 
 
@@ -67,10 +68,11 @@ class YunbloomShareClient:
         messages: list[dict[str, object]],
         tools: list[dict[str, object]] | None = None,
         tool_choice: str | None = None,
+        session_id: str | None = None,
     ) -> SharedCompletion:
         body: dict[str, object] = {
             "messages": messages,
-            "sessionId": str(uuid4()),
+            "sessionId": session_id or str(uuid4()),
             "source": "api",
             "extra": {},
         }

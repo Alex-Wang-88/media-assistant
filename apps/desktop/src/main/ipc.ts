@@ -13,6 +13,7 @@ import {
   knowledgeSearchInputSchema,
   listOutputsInputSchema,
   persistedPublishDraftStateSchema,
+  personaFlowTurnInputSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
   personaRagSaveDocumentInputSchema,
@@ -37,7 +38,14 @@ import {
   listBilibiliAccounts,
   openAndFillBilibili,
 } from "./bilibili-publisher";
-import { getAgentStatus, streamChat } from "./chat-client";
+import { getAgentStatus, streamChat, turnPersonaAgent } from "./chat-client";
+import {
+  applyPersonaAgentTurnResponse,
+  buildPersonaAgentTurnRequest,
+  createPersonaFlowState,
+  ensurePersonaStageConversation,
+  normalizePersonaAgentTurnResponse,
+} from "./persona-flow";
 import type { Workspace } from "./workspace";
 
 type WorkspaceAccess = {
@@ -99,6 +107,35 @@ export function registerIpc(access: WorkspaceAccess): void {
       personaRagDroppedFilesSchema.parse(raw),
     ),
   }));
+  ipcMain.handle(ipcChannels.personaFlowLoad, () => requireWorkspace(access).loadPersonaFlow());
+  ipcMain.handle(ipcChannels.personaFlowStart, () => {
+    const workspace = requireWorkspace(access);
+    const flow = createPersonaFlowState();
+    workspace.savePersonaFlow(flow);
+    return flow;
+  });
+  ipcMain.handle(ipcChannels.personaFlowTurn, async (_event, raw) => {
+    const input = personaFlowTurnInputSchema.parse(raw);
+    const workspace = requireWorkspace(access);
+    const stored = workspace.loadPersonaFlow();
+    if (!stored) throw new Error("当前没有正在进行的用户画像流程");
+    const flow = ensurePersonaStageConversation(stored);
+    workspace.savePersonaFlow(flow);
+    const request = buildPersonaAgentTurnRequest(
+      flow,
+      "user_message",
+      input.userMessage,
+      input.includePersonaReferences ? workspace.personaRagReferenceContext() : null,
+    );
+    const agentTurn = await turnPersonaAgent(request);
+    const response = normalizePersonaAgentTurnResponse(flow, agentTurn.response);
+    const next = applyPersonaAgentTurnResponse(flow, response, undefined, {
+      userMessage: agentTurn.userMessage,
+      assistantMessage: agentTurn.assistantMessage,
+    });
+    workspace.savePersonaFlow(next);
+    return { flow: next, response };
+  });
   ipcMain.handle(ipcChannels.filesListOutputs, (_event, raw) => {
     const input = listOutputsInputSchema.parse(raw);
     return requireWorkspace(access).listOutputs(input.projectId);
