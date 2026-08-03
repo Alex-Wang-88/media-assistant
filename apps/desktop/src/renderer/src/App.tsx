@@ -30,6 +30,7 @@ import {
 import { useChatScroll } from "./chat-scroll";
 import { applyChatEvent, type ConversationMessage, type ConversationToolCall } from "./chat-state";
 import { PublishCenter, type PublishCenterSeed } from "./PublishCenter";
+import { loadPersonaTranscript, savePersonaTranscript } from "./persona-transcript";
 import { SettingsPanel } from "./SettingsPanel";
 import { useUiStore } from "./store";
 
@@ -95,6 +96,7 @@ export function App() {
   const [pendingDeleteProjectId, setPendingDeleteProjectId] = useState<string | null>(null);
   const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
   const [personaSetupOpen, setPersonaSetupOpen] = useState(false);
+  const [personaResumeChoiceOpen, setPersonaResumeChoiceOpen] = useState(false);
   const [personaSetupMessages, setPersonaSetupMessages] = useState<ConversationMessage[]>([]);
   const [personaFlow, setPersonaFlow] = useState<PersonaFlowState | null>(null);
   const [personaReportDraft, setPersonaReportDraft] = useState<string | null>(null);
@@ -454,9 +456,17 @@ export function App() {
           parsePersonaReport(flow.finalSummary) ?? `# 用户画像\n\n${flow.finalSummary.trim()}`,
         );
       }
-      const current = flow.stages[flow.currentStage - 1];
-      const welcome = current?.lastAssistantMessage ?? personaStageWelcome(flow.currentStage);
-      setPersonaSetupMessages([personaSetupMessage("assistant", welcome, true)]);
+      const hasUnfinishedProgress =
+        !flow.flowCompleted &&
+        (flow.stateVersion > 0 ||
+          flow.currentStage > 1 ||
+          flow.stages.some((stage) => stage.agentMessages.length > 0));
+      setPersonaResumeChoiceOpen(hasUnfinishedProgress);
+      if (!hasUnfinishedProgress) {
+        const current = flow.stages[flow.currentStage - 1];
+        const welcome = current?.lastAssistantMessage ?? personaStageWelcome(flow.currentStage);
+        setPersonaSetupMessages([personaSetupMessage("assistant", welcome, true)]);
+      }
     } catch (error) {
       setPersonaSetupMessages([
         {
@@ -478,6 +488,7 @@ export function App() {
     try {
       const flow = await window.desktop.personaFlow.start();
       setPersonaFlow(flow);
+      setPersonaResumeChoiceOpen(false);
       setPersonaSelectedOptionIds([]);
       setPersonaFinalAnswer("");
       setPersonaSetupMessages([
@@ -494,6 +505,16 @@ export function App() {
     } finally {
       setIsStreaming(false);
     }
+  };
+
+  const continuePersonaSetup = () => {
+    if (!personaFlow) return;
+    const restored = loadPersonaTranscript(window.localStorage, personaFlow).map((entry) =>
+      personaSetupMessage(entry.role, entry.content, entry.role === "assistant"),
+    );
+    setPersonaSetupMessages(restored);
+    setPersonaResumeChoiceOpen(false);
+    requestLatestMessage(true);
   };
 
   const selectContentAgent = (type: ContentAgentType) => {
@@ -536,6 +557,37 @@ export function App() {
     if (ui.appearance.mode !== "system") return;
     return watchSystemTheme(apply);
   }, [ui.appearance]);
+
+  useEffect(() => {
+    if (
+      !personaSetupOpen ||
+      personaResumeChoiceOpen ||
+      isStreaming ||
+      personaConvergenceActive ||
+      personaReportDraft ||
+      personaDocumentOpen
+    ) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => messageInputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [
+    isStreaming,
+    personaConvergenceActive,
+    personaDocumentOpen,
+    personaReportDraft,
+    personaResumeChoiceOpen,
+    personaSetupOpen,
+  ]);
+
+  useEffect(() => {
+    if (!personaFlow || !personaSetupOpen || personaResumeChoiceOpen) return;
+    const visibleMessages = personaSetupMessages
+      .filter((entry) => !entry.hidden && entry.status === "complete" && entry.content.trim())
+      .map((entry) => ({ role: entry.role, content: entry.content }));
+    if (visibleMessages.length === 0) return;
+    savePersonaTranscript(window.localStorage, personaFlow.flowId, visibleMessages);
+  }, [personaFlow, personaResumeChoiceOpen, personaSetupMessages, personaSetupOpen]);
 
   useEffect(() => {
     if (!ui.selectedProjectId && projects.data?.[0]) ui.selectProject(projects.data[0].id);
@@ -994,22 +1046,41 @@ export function App() {
                         : "正在准备五阶段画像流程"}
                     </small>
                   </div>
-                  <div className="persona-setup-actions">
-                    <button
-                      type="button"
-                      disabled={isStreaming}
-                      onClick={() => void restartPersonaSetup()}
-                    >
-                      重新开始画像
-                    </button>
-                  </div>
+                  {!personaResumeChoiceOpen ? (
+                    <div className="persona-setup-actions">
+                      <button
+                        type="button"
+                        disabled={isStreaming}
+                        onClick={() => void restartPersonaSetup()}
+                      >
+                        重新开始画像
+                      </button>
+                    </div>
+                  ) : null}
                 </header>
-                <div className="message-list" aria-live="polite">
-                  {personaSetupMessages.map((entry) => (
-                    <ChatBubble key={entry.id} message={entry} />
-                  ))}
-                </div>
-                {personaSelectionRequired && activePersonaStage ? (
+                {personaResumeChoiceOpen ? (
+                  <section className="persona-resume-choice" aria-labelledby="persona-resume-title">
+                    <div className="persona-resume-copy">
+                      <strong id="persona-resume-title">发现上次未完成的用户画像</strong>
+                      <p>可以恢复上次的全部对话和当前进度，也可以清空进度重新开始。</p>
+                    </div>
+                    <div className="persona-resume-actions">
+                      <button type="button" className="primary" onClick={continuePersonaSetup}>
+                        继续上次画像
+                      </button>
+                      <button type="button" onClick={() => void restartPersonaSetup()}>
+                        重新开始
+                      </button>
+                    </div>
+                  </section>
+                ) : (
+                  <div className="message-list" aria-live="polite">
+                    {personaSetupMessages.map((entry) => (
+                      <ChatBubble key={entry.id} message={entry} />
+                    ))}
+                  </div>
+                )}
+                {!personaResumeChoiceOpen && personaSelectionRequired && activePersonaStage ? (
                   <fieldset className="persona-convergence-options">
                     <legend>
                       {personaSelectionMultiple
@@ -1070,7 +1141,9 @@ export function App() {
                     </div>
                   </fieldset>
                 ) : null}
-                {personaFinalConfirmationRequired && activePersonaStage ? (
+                {!personaResumeChoiceOpen &&
+                personaFinalConfirmationRequired &&
+                activePersonaStage ? (
                   <fieldset className="persona-convergence-options persona-final-confirmation">
                     <legend>这是本阶段最终结论</legend>
                     <div className="persona-convergence-actions">
@@ -1121,7 +1194,7 @@ export function App() {
                     </button>
                   </fieldset>
                 ) : null}
-                {personaReportDraft ? (
+                {!personaResumeChoiceOpen && personaReportDraft ? (
                   <article className="persona-draft-card">
                     <header>
                       <div>
@@ -1255,7 +1328,10 @@ export function App() {
           </div>
         </div>
         {!personaDocumentOpen &&
-        ((personaSetupOpen && !personaReportDraft && !personaConvergenceActive) ||
+        ((personaSetupOpen &&
+          !personaResumeChoiceOpen &&
+          !personaReportDraft &&
+          !personaConvergenceActive) ||
           (!personaSetupOpen && conversationMessages.length > 0)) ? (
           <div className="composer-wrap">
             {personaSetupOpen ? (

@@ -966,6 +966,55 @@ svg {
   opacity: 0.5;
 }
 
+.persona-resume-choice {
+  display: grid;
+  width: min(520px, 100%);
+  gap: 18px;
+  margin: 72px auto 0;
+  padding: 22px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.persona-resume-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.persona-resume-choice strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.persona-resume-choice p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.persona-resume-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.persona-resume-choice button {
+  padding: 8px 13px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.persona-resume-choice button.primary {
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
 .persona-convergence-options {
   display: grid;
   gap: 10px;
