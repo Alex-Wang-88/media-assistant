@@ -8,6 +8,9 @@ import type {
   DesktopApi,
   FilePreview,
   LocalPublishImage,
+  PersonaFlowState,
+  PersonaFlowTurnInput,
+  PersonaFlowTurnResult,
   PersonaRagConfirmInput,
   PersonaRagDocument,
   PersonaRagDroppedFile,
@@ -36,6 +39,9 @@ const channels = {
   personaRagDelete: "persona-rag:delete",
   personaRagImportFiles: "persona-rag:import-files",
   personaRagImportDroppedFiles: "persona-rag:import-dropped-files",
+  personaFlowLoad: "persona-flow:load",
+  personaFlowStart: "persona-flow:start",
+  personaFlowTurn: "persona-flow:turn",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",
@@ -138,6 +144,21 @@ const api: DesktopApi = {
       ipcRenderer
         .invoke(channels.personaRagImportDroppedFiles, files)
         .then((value: unknown) => expectObject<PersonaRagImportResult>(value)),
+  },
+  personaFlow: {
+    load: () =>
+      ipcRenderer.invoke(channels.personaFlowLoad).then((value: unknown) => {
+        if (value === null) return null;
+        return expectObject<PersonaFlowState>(value);
+      }),
+    start: () =>
+      ipcRenderer
+        .invoke(channels.personaFlowStart)
+        .then((value: unknown) => expectObject<PersonaFlowState>(value)),
+    turn: (input: PersonaFlowTurnInput) =>
+      ipcRenderer
+        .invoke(channels.personaFlowTurn, input)
+        .then((value: unknown) => expectObject<PersonaFlowTurnResult>(value)),
   },
   files: {
     listOutputs: (projectId) =>

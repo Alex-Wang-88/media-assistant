@@ -2,7 +2,14 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ChatSendInput, ChatStreamEvent, DesktopApi } from "@yoom/desktop-contracts";
+import type {
+  ChatSendInput,
+  ChatStreamEvent,
+  DesktopApi,
+  PersonaFlowState,
+  PersonaFlowTurnInput,
+  PersonaFlowTurnResult,
+} from "@yoom/desktop-contracts";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/renderer/src/App";
@@ -19,7 +26,7 @@ afterEach(() => {
 });
 
 describe("Persona RAG plain-text onboarding", () => {
-  it("asks for the industry, preserves chat history, edits the final report, and saves locally", async () => {
+  it("shows local stage welcomes, uses the five-stage flow, and saves the final report", async () => {
     let ready = false;
     const finalReport = [
       "你卖什么",
@@ -59,16 +66,109 @@ describe("Persona RAG plain-text onboarding", () => {
       ready = false;
       return { ready: false, fileCount: 0, path: "/workspace/企业知识库/用户Persona RAG" };
     });
-    let turn = 0;
+    const flowId = crypto.randomUUID();
+    const createFlow = (currentStage = 1, flowCompleted = false): PersonaFlowState => ({
+      version: 1,
+      flowId,
+      stateVersion: currentStage - 1,
+      flowCompleted,
+      currentStage,
+      stages: Array.from({ length: 5 }, (_value, index) => ({
+        stage: index + 1,
+        status:
+          index + 1 < currentStage
+            ? "confirmed"
+            : index + 1 === currentStage
+              ? "collecting"
+              : "not_started",
+        revisionCount: 0,
+        questionCount: 0,
+        mode: "normal",
+        options: [],
+        conversationId: null,
+        lastAssistantMessage: null,
+        agentMessages: [],
+        stageData: {},
+        result: {},
+      })),
+      finalSummary: flowCompleted ? finalReport : null,
+      updatedAt: "2026-07-31T00:00:00.000Z",
+    });
+    let activeFlow = createFlow();
+    let personaTurn = 0;
+    const turnPersona = vi.fn(
+      async (_input: PersonaFlowTurnInput): Promise<PersonaFlowTurnResult> => {
+        personaTurn += 1;
+        if (personaTurn === 1) {
+          activeFlow = {
+            ...activeFlow,
+            stateVersion: 1,
+            stages: activeFlow.stages.map((stage) =>
+              stage.stage === 1
+                ? {
+                    ...stage,
+                    status: "waiting_confirmation",
+                    lastAssistantMessage:
+                      "我会重点强调进口家具的品质与设计感。这个判断符合实际情况吗？",
+                  }
+                : stage,
+            ),
+          };
+          return {
+            flow: activeFlow,
+            response: {
+              requestId: crypto.randomUUID(),
+              flowId,
+              stateVersion: 0,
+              stage: 1,
+              action: "present_conclusion",
+              question: null,
+              conclusion: "我会重点强调进口家具的品质与设计感。这个判断符合实际情况吗？",
+              resultPatch: { product_or_service: "进口家具" },
+              options: [],
+              finalSummary: null,
+            },
+          };
+        }
+        if (personaTurn === 2) {
+          activeFlow = createFlow(2);
+          return {
+            flow: activeFlow,
+            response: {
+              requestId: crypto.randomUUID(),
+              flowId,
+              stateVersion: 1,
+              stage: 1,
+              action: "complete_stage",
+              question: null,
+              conclusion: null,
+              resultPatch: { product_or_service: "进口家具" },
+              options: [],
+              finalSummary: null,
+            },
+          };
+        }
+        activeFlow = createFlow(5, true);
+        return {
+          flow: activeFlow,
+          response: {
+            requestId: crypto.randomUUID(),
+            flowId,
+            stateVersion: 4,
+            stage: 5,
+            action: "generate_final_summary",
+            question: null,
+            conclusion: null,
+            resultPatch: { primary_conversion_goal: "留下联系方式" },
+            options: [],
+            finalSummary: finalReport,
+          },
+        };
+      },
+    );
     const send = vi.fn(async (input: ChatSendInput, onEvent: (event: ChatStreamEvent) => void) => {
-      turn += 1;
       onEvent({ type: "start", requestId: input.requestId });
-      onEvent({
-        type: "text-delta",
-        requestId: input.requestId,
-        delta:
-          turn === 1 ? "我会重点强调进口家具的品质与设计感。这个判断符合实际情况吗？" : finalReport,
-      });
+      onEvent({ type: "text-delta", requestId: input.requestId, delta: "普通内容 Agent" });
       onEvent({ type: "finish", requestId: input.requestId });
     });
     Object.defineProperty(window, "desktop", {
@@ -96,6 +196,11 @@ describe("Persona RAG plain-text onboarding", () => {
           delete: deletePersona,
           importFiles: vi.fn(async () => ({ names: [] })),
           importDroppedFiles: vi.fn(async () => ({ names: [] })),
+        },
+        personaFlow: {
+          load: vi.fn(async () => null),
+          start: vi.fn(async () => activeFlow),
+          turn: turnPersona,
         },
         files: {
           listOutputs: vi.fn(),
@@ -134,35 +239,32 @@ describe("Persona RAG plain-text onboarding", () => {
     const enterSetup = await screen.findByRole("button", { name: /与 Agent 对话建立画像/ });
     await waitFor(() => expect(enterSetup.hasAttribute("disabled")).toBe(false));
     fireEvent.click(enterSetup);
-    expect(await screen.findByText(/欢迎使用用户画像助手.*所在的行业是什么/)).toBeTruthy();
+    expect(await screen.findByText(/第1\/5阶段：请告诉我.*主要经营什么业务/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "暂时退出" })).toBeNull();
     expect(send).not.toHaveBeenCalled();
 
     const input = screen.getByPlaceholderText("请输入你的回答…");
     fireEvent.change(input, { target: { value: "进口家具" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
-    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    expect(send.mock.calls[0]?.[0]).toMatchObject({
-      mode: "persona_setup",
+    await waitFor(() => expect(turnPersona).toHaveBeenCalledTimes(1));
+    expect(turnPersona.mock.calls[0]?.[0]).toMatchObject({
+      userMessage: "进口家具",
       includePersonaReferences: false,
-      messages: [{ role: "user", content: "进口家具" }],
     });
     expect(await screen.findByText(/品质与设计感/)).toBeTruthy();
 
     fireEvent.change(screen.getByPlaceholderText("请输入你的回答…"), {
-      target: { value: "符合，请生成报告" },
+      target: { value: "符合" },
     });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
-    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
-    expect(send.mock.calls[1]?.[0].sessionId).toBe(send.mock.calls[0]?.[0].sessionId);
-    expect(send.mock.calls[1]?.[0].messages).toEqual([
-      { role: "user", content: "进口家具" },
-      expect.objectContaining({
-        role: "assistant",
-        content: expect.stringContaining("品质与设计感"),
-      }),
-      { role: "user", content: "符合，请生成报告" },
-    ]);
+    await waitFor(() => expect(turnPersona).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/第2\/5阶段：你的产品或服务主要卖给谁/)).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("请输入你的回答…"), {
+      target: { value: "家具零售商" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await waitFor(() => expect(turnPersona).toHaveBeenCalledTimes(3));
 
     expect(await screen.findByText("用户画像报告待确认")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "继续对话修改" })).toBeNull();
@@ -196,7 +298,7 @@ describe("Persona RAG plain-text onboarding", () => {
     fireEvent.click(screen.getByRole("button", { name: /产品推广文案/ }));
     expect(await screen.findByText(/接下来请告诉我本次想推广的产品是什么/)).toBeTruthy();
     expect(screen.getByPlaceholderText("告诉我这次要推广的产品…")).toBeTruthy();
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).not.toHaveBeenCalled();
     fireEvent.change(screen.getByPlaceholderText("告诉我这次要推广的产品…"), {
       target: { value: "尚未发送的产品内容" },
     });
@@ -204,7 +306,7 @@ describe("Persona RAG plain-text onboarding", () => {
     expect(screen.getByRole("heading", { name: "选择本次内容类型" })).toBeTruthy();
     expect(screen.queryByText(/接下来请告诉我本次想推广的产品是什么/)).toBeNull();
     expect(screen.queryByPlaceholderText("告诉我这次要推广的产品…")).toBeNull();
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(send).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "查看或更新画像" }));
     const savedEditor = await screen.findByLabelText("用户画像主文件内容");
     fireEvent.change(savedEditor, { target: { value: "# 用户画像\n\n保存后的再次修改" } });

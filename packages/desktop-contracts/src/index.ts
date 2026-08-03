@@ -185,6 +185,200 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
 ]);
 export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
 
+export const personaStageSchema = z.number().int().min(1).max(5);
+export type PersonaStage = z.infer<typeof personaStageSchema>;
+export const PERSONA_STAGE_QUESTION_LIMIT = 5;
+
+export const personaStageOptionSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(1).max(200),
+});
+export type PersonaStageOption = z.infer<typeof personaStageOptionSchema>;
+
+export const PERSONA_STAGE_WELCOMES: Record<number, string> = {
+  1: "第1/5阶段：请告诉我，你目前主要经营什么业务？",
+  2: "第2/5阶段：你的产品或服务主要卖给谁？",
+  3: "第3/5阶段：在这些客户中，你现在最想优先吸引的是哪一类？",
+  4: "第4/5阶段：客户为什么选择你，而不是其他同类产品或服务？",
+  5: `第5/5阶段：你希望用户看完内容后产生哪些行动？
+
+1. 留下联系方式；
+2. 主动发起咨询；
+3. 前往门店或线下场所；
+4. 直接购买或成交。
+
+可以选择一个或多个。如果多个都需要，请告诉我最优先的是哪一个。`,
+};
+
+export function personaStageWelcome(stage: PersonaStage): string {
+  return PERSONA_STAGE_WELCOMES[stage] ?? "当前用户画像阶段尚未配置。";
+}
+
+export const personaStageStatusSchema = z.enum([
+  "not_started",
+  "collecting",
+  "waiting_confirmation",
+  "selection_required",
+  "confirmed",
+  "skipped",
+  "needs_revalidation",
+]);
+export type PersonaStageStatus = z.infer<typeof personaStageStatusSchema>;
+
+export const personaStageValueSchema = z.union([
+  z.string().max(2_000),
+  z.boolean(),
+  z.array(z.string().max(500)).max(20),
+  z.null(),
+]);
+export const personaStageDataSchema = z.record(z.string().max(80), personaStageValueSchema);
+export type PersonaStageData = z.infer<typeof personaStageDataSchema>;
+
+export const personaStageStateSchema = z.object({
+  stage: personaStageSchema,
+  status: personaStageStatusSchema,
+  revisionCount: z.number().int().nonnegative(),
+  questionCount: z.number().int().nonnegative().default(0),
+  mode: z.enum(["normal", "selection"]).default("normal"),
+  options: z.array(personaStageOptionSchema).max(4).default([]),
+  conversationId: z.string().min(1).max(200).nullable(),
+  lastAssistantMessage: z.string().max(2_000).nullable().default(null),
+  agentMessages: z.array(chatMessageSchema).max(100).default([]),
+  stageData: personaStageDataSchema,
+  result: personaStageDataSchema,
+});
+export type PersonaStageState = z.infer<typeof personaStageStateSchema>;
+
+export const personaFlowStateSchema = z
+  .object({
+    version: z.literal(1),
+    flowId: z.uuid(),
+    stateVersion: z.number().int().nonnegative(),
+    flowCompleted: z.boolean(),
+    currentStage: personaStageSchema,
+    stages: z.array(personaStageStateSchema).length(5),
+    finalSummary: z.string().max(20_000).nullable(),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .refine(
+    (flow) => flow.stages.every((stage, index) => stage.stage === index + 1),
+    "画像阶段必须按 1 到 5 排列",
+  );
+export type PersonaFlowState = z.infer<typeof personaFlowStateSchema>;
+
+export const personaAgentEventSchema = z.enum([
+  "stage_start",
+  "user_message",
+  "confirm_stage",
+  "modify_stage",
+  "select_option",
+  "skip_stage",
+]);
+export type PersonaAgentEvent = z.infer<typeof personaAgentEventSchema>;
+
+export const personaAgentActionSchema = z.enum([
+  "ask_question",
+  "show_selection",
+  "present_conclusion",
+  "complete_stage",
+  "generate_final_summary",
+]);
+export type PersonaAgentAction = z.infer<typeof personaAgentActionSchema>;
+
+export const personaAgentTurnRequestSchema = z.object({
+  requestId: z.uuid(),
+  flowId: z.uuid(),
+  stateVersion: z.number().int().nonnegative(),
+  stage: personaStageSchema,
+  event: personaAgentEventSchema,
+  userMessage: z.string().trim().min(1).max(20_000).nullable(),
+  selectedOption: personaStageOptionSchema.nullable().default(null),
+  maxQuestionCount: z.literal(PERSONA_STAGE_QUESTION_LIMIT),
+  mustConverge: z.boolean(),
+  referenceContext: z.string().max(50_000).nullable(),
+  stageState: personaStageStateSchema,
+  confirmedData: z.record(z.string(), personaStageDataSchema),
+});
+export type PersonaAgentTurnRequest = z.infer<typeof personaAgentTurnRequestSchema>;
+
+export const personaAgentTurnResponseSchema = z
+  .object({
+    requestId: z.uuid(),
+    flowId: z.uuid(),
+    stateVersion: z.number().int().nonnegative(),
+    stage: personaStageSchema,
+    action: personaAgentActionSchema,
+    question: z.string().trim().min(1).max(300).nullable(),
+    conclusion: z.string().trim().min(1).max(500).nullable(),
+    resultPatch: personaStageDataSchema,
+    options: z.array(personaStageOptionSchema).max(4).default([]),
+    finalSummary: z.string().trim().min(1).max(20_000).nullable(),
+  })
+  .superRefine((response, context) => {
+    if (response.action === "ask_question" && !response.question) {
+      context.addIssue({ code: "custom", path: ["question"], message: "提问动作必须包含问题" });
+    }
+    if (
+      response.action === "show_selection" &&
+      (!response.question || response.options.length < 2)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["options"],
+        message: "选项收敛必须包含说明和二到四个选项",
+      });
+    }
+    if (response.action === "present_conclusion" && !response.conclusion) {
+      context.addIssue({
+        code: "custom",
+        path: ["conclusion"],
+        message: "展示结论必须包含结论文本",
+      });
+    }
+    if (response.action === "generate_final_summary" && !response.finalSummary) {
+      context.addIssue({
+        code: "custom",
+        path: ["finalSummary"],
+        message: "最终汇总动作必须包含最终汇总",
+      });
+    }
+  });
+export type PersonaAgentTurnResponse = z.infer<typeof personaAgentTurnResponseSchema>;
+
+export const personaAgentApiTurnResultSchema = z.object({
+  response: personaAgentTurnResponseSchema,
+  userMessage: z.string().min(1).max(100_000),
+  assistantMessage: z.string().min(1).max(100_000),
+});
+export type PersonaAgentApiTurnResult = z.infer<typeof personaAgentApiTurnResultSchema>;
+
+export const personaFlowTurnInputSchema = z
+  .object({
+    userMessage: z.string().trim().min(1).max(20_000),
+    includePersonaReferences: z.boolean().default(false),
+    selectedOption: personaStageOptionSchema.nullable().default(null),
+    skipStage: z.boolean().default(false),
+    confirmStage: z.boolean().default(false),
+  })
+  .refine(
+    (input) =>
+      [Boolean(input.selectedOption), input.skipStage, input.confirmStage].filter(Boolean).length <=
+      1,
+    {
+      message: "选择选项、确认阶段和跳过阶段不能同时发生",
+    },
+  )
+  .refine((input) => !input.confirmStage || input.userMessage === "确认当前结论", {
+    message: "确认阶段必须使用固定确认文字",
+  });
+export type PersonaFlowTurnInput = z.infer<typeof personaFlowTurnInputSchema>;
+
+export const personaFlowTurnResultSchema = z.object({
+  flow: personaFlowStateSchema,
+  response: personaAgentTurnResponseSchema,
+});
+export type PersonaFlowTurnResult = z.infer<typeof personaFlowTurnResultSchema>;
+
 export const publishStartInputSchema = z.object({
   projectId: projectIdSchema,
   artifactPath: z.string().min(1),
@@ -349,6 +543,11 @@ export interface DesktopApi {
     importFiles(): Promise<PersonaRagImportResult>;
     importDroppedFiles(files: PersonaRagDroppedFile[]): Promise<PersonaRagImportResult>;
   };
+  personaFlow: {
+    load(): Promise<PersonaFlowState | null>;
+    start(): Promise<PersonaFlowState>;
+    turn(input: PersonaFlowTurnInput): Promise<PersonaFlowTurnResult>;
+  };
   files: {
     listOutputs(projectId: string): Promise<Artifact[]>;
     preview(projectId: string, path: string): Promise<FilePreview>;
@@ -391,6 +590,9 @@ export const ipcChannels = {
   personaRagDelete: "persona-rag:delete",
   personaRagImportFiles: "persona-rag:import-files",
   personaRagImportDroppedFiles: "persona-rag:import-dropped-files",
+  personaFlowLoad: "persona-flow:load",
+  personaFlowStart: "persona-flow:start",
+  personaFlowTurn: "persona-flow:turn",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",

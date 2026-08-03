@@ -4,13 +4,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 
 from app.config import Settings
-from app.models.schemas import HealthResponse
+from app.models.schemas import HealthResponse, PersonaStage
 from app.providers.article import YunbloomSharedArticleProvider, YunrongArticleProvider
 from app.providers.chat import YunbloomChatProvider
+from app.providers.persona_stages import (
+    PersonaStageAgent,
+    PersonaStageAgentRegistry,
+    YunbloomPersonaStageAgent,
+)
 from app.providers.yunbloom_share import YunbloomShareClient
 from app.routers.articles import router as articles_router
 from app.routers.catalog import router as catalog_router
 from app.routers.chat import router as chat_router
+from app.routers.persona_stages import router as persona_stages_router
 from app.services.delivery import DeliveryService
 
 
@@ -18,6 +24,19 @@ from app.services.delivery import DeliveryService
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = Settings.from_environment()
     app.state.delivery_service = DeliveryService()
+    persona_stage_agents: dict[PersonaStage, PersonaStageAgent] = {}
+    if settings.persona_agent_api_key:
+        persona_stages: tuple[PersonaStage, ...] = (1, 2, 3, 4, 5)
+        for stage, url in zip(
+            persona_stages,
+            settings.persona_stage_share_urls(),
+            strict=True,
+        ):
+            if url:
+                persona_stage_agents[stage] = YunbloomPersonaStageAgent(
+                    YunbloomShareClient(url=url, api_key=settings.persona_agent_api_key)
+                )
+    app.state.persona_stage_agents = PersonaStageAgentRegistry(persona_stage_agents)
     if settings.yunbloom_share_url and settings.yunbloom_api_key:
         share_client = YunbloomShareClient(
             url=settings.yunbloom_share_url,
@@ -48,12 +67,19 @@ app = FastAPI(
 app.include_router(articles_router)
 app.include_router(catalog_router)
 app.include_router(chat_router)
+app.include_router(persona_stages_router)
 
 
 @app.get("/health", response_model=HealthResponse)
 async def health(request: Request) -> HealthResponse:
+    stage_registry: PersonaStageAgentRegistry | None = getattr(
+        request.app.state,
+        "persona_stage_agents",
+        None,
+    )
     if (
-        getattr(request.app.state, "persona_chat_provider", None) is not None
+        (stage_registry is not None and stage_registry.all_configured())
+        or getattr(request.app.state, "persona_chat_provider", None) is not None
         or getattr(request.app.state, "chat_provider", None) is not None
     ):
         return HealthResponse(agent="ready")

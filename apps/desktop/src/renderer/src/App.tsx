@@ -2,10 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   Artifact,
   ChatMessage,
+  PersonaFlowState,
   PersonaRagConfirmInput,
   PersonaRagImportResult,
+  PersonaStageOption,
   Project,
 } from "@yoom/desktop-contracts";
+import { personaStageWelcome } from "@yoom/desktop-contracts";
 import {
   memo,
   type DragEvent as ReactDragEvent,
@@ -27,6 +30,7 @@ import {
 import { useChatScroll } from "./chat-scroll";
 import { applyChatEvent, type ConversationMessage, type ConversationToolCall } from "./chat-state";
 import { PublishCenter, type PublishCenterSeed } from "./PublishCenter";
+import { loadPersonaTranscript, savePersonaTranscript } from "./persona-transcript";
 import { SettingsPanel } from "./SettingsPanel";
 import { useUiStore } from "./store";
 
@@ -92,8 +96,12 @@ export function App() {
   const [pendingDeleteProjectId, setPendingDeleteProjectId] = useState<string | null>(null);
   const [taskDeleteError, setTaskDeleteError] = useState<string | null>(null);
   const [personaSetupOpen, setPersonaSetupOpen] = useState(false);
+  const [personaResumeChoiceOpen, setPersonaResumeChoiceOpen] = useState(false);
   const [personaSetupMessages, setPersonaSetupMessages] = useState<ConversationMessage[]>([]);
+  const [personaFlow, setPersonaFlow] = useState<PersonaFlowState | null>(null);
   const [personaReportDraft, setPersonaReportDraft] = useState<string | null>(null);
+  const [personaSelectedOptionIds, setPersonaSelectedOptionIds] = useState<string[]>([]);
+  const [personaFinalAnswer, setPersonaFinalAnswer] = useState("");
   const [personaDocumentOpen, setPersonaDocumentOpen] = useState(false);
   const [personaDocumentPath, setPersonaDocumentPath] = useState("");
   const [personaDocumentContent, setPersonaDocumentContent] = useState("");
@@ -105,7 +113,6 @@ export function App() {
   const [contentAgentType, setContentAgentType] = useState<ContentAgentType | null>(null);
   const [publishCenterOpen, setPublishCenterOpen] = useState(false);
   const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed | null>(null);
-  const personaSessionId = useRef(crypto.randomUUID());
   const skipNextProjectReset = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const activeScrollItems = useMemo(
@@ -231,6 +238,7 @@ export function App() {
       await personaRag.refetch();
       setPersonaSetupOpen(false);
       setPersonaSetupMessages([]);
+      setPersonaFlow(null);
       setPersonaReportDraft(null);
       setMessage("");
     },
@@ -248,6 +256,7 @@ export function App() {
       setPersonaDeleteError(null);
       setPersonaSetupOpen(false);
       setPersonaSetupMessages([]);
+      setPersonaFlow(null);
       setPersonaReportDraft(null);
       setPersonaDocumentOpen(false);
       setPersonaDocumentPath("");
@@ -286,6 +295,13 @@ export function App() {
   );
   const personaUploadPending =
     importPersonaRagFiles.isPending || importDroppedPersonaRagFiles.isPending;
+  const activePersonaStage = personaFlow?.stages[personaFlow.currentStage - 1] ?? null;
+  const personaSelectionRequired = activePersonaStage?.status === "selection_required";
+  const personaFinalConfirmationRequired =
+    activePersonaStage?.status === "waiting_confirmation" && activePersonaStage.questionCount >= 5;
+  const personaConvergenceActive =
+    Boolean(personaSelectionRequired) || Boolean(personaFinalConfirmationRequired);
+  const personaSelectionMultiple = personaFlow?.currentStage === 5;
   const handlePersonaDragOver = (event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -302,17 +318,14 @@ export function App() {
   const sendPersonaAgentMessage = async (
     prompt: string,
     showUserMessage = true,
-    previousMessages = personaSetupMessages,
     includeReferences = false,
+    selectedOption: PersonaStageOption | null = null,
+    skipStage = false,
+    confirmStage = false,
   ) => {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt || isStreaming) return;
-    const requestId = crypto.randomUUID();
     const assistantId = crypto.randomUUID();
-    const history: ChatMessage[] = previousMessages
-      .filter((entry) => !entry.modelExcluded)
-      .map((entry) => ({ role: entry.role, content: entry.modelContent ?? entry.content }))
-      .filter((entry) => entry.content.trim());
     const userEntry = {
       ...personaSetupMessage("user", normalizedPrompt),
       hidden: !showUserMessage,
@@ -328,35 +341,47 @@ export function App() {
     if (showUserMessage) setPersonaReportDraft(null);
     setMessage("");
     setIsStreaming(true);
-    let rawAssistantContent = "";
     try {
-      await window.desktop.chat.send(
-        {
-          requestId,
-          sessionId: personaSessionId.current,
-          messages: [...history, { role: "user", content: normalizedPrompt }],
-          knowledgeEnabled: true,
-          strategyEnabled: false,
-          autoExecute: false,
-          mode: "persona_setup",
-          includePersonaReferences: includeReferences,
-        },
-        (event) => {
-          if (event.type === "text-delta") rawAssistantContent += event.delta;
-          setPersonaSetupMessages((current) => applyChatEvent(current, assistantId, event));
-        },
-      );
-      const report = parsePersonaReport(rawAssistantContent);
+      const result = await window.desktop.personaFlow.turn({
+        userMessage: normalizedPrompt,
+        includePersonaReferences: includeReferences,
+        selectedOption,
+        skipStage,
+        confirmStage,
+      });
+      setPersonaFlow(result.flow);
+      setPersonaSelectedOptionIds([]);
+      setPersonaFinalAnswer("");
+      let assistantContent = "";
+      if (result.response.action === "ask_question") {
+        assistantContent = result.response.question ?? "";
+      } else if (result.response.action === "show_selection") {
+        assistantContent = result.response.question ?? "";
+      } else if (result.response.action === "present_conclusion") {
+        assistantContent = result.response.conclusion ?? "";
+      } else if (result.response.action === "complete_stage") {
+        assistantContent = personaStageWelcome(result.flow.currentStage);
+      } else if (result.response.action === "generate_final_summary") {
+        assistantContent = "五个阶段已完成，用户画像报告已生成。";
+      }
       requestLatestMessage(true);
-      setPersonaReportDraft(report);
-      if (rawAssistantContent) {
-        setPersonaSetupMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? { ...entry, content: rawAssistantContent, status: "complete" }
-              : entry,
-          ),
-        );
+      setPersonaSetupMessages((current) =>
+        current.map((entry) =>
+          entry.id === assistantId
+            ? {
+                ...entry,
+                content: assistantContent,
+                status: "complete",
+                modelExcluded: result.response.action !== "ask_question",
+              }
+            : entry,
+        ),
+      );
+      if (result.response.action === "generate_final_summary" && result.response.finalSummary) {
+        const report =
+          parsePersonaReport(result.response.finalSummary) ??
+          `# 用户画像\n\n${result.response.finalSummary.trim()}`;
+        setPersonaReportDraft(report);
       }
     } catch (error) {
       const errorMessage = readableError(error);
@@ -370,19 +395,126 @@ export function App() {
     }
   };
 
-  const beginPersonaSetup = () => {
-    personaSessionId.current = crypto.randomUUID();
+  const togglePersonaConvergenceOption = (option: PersonaStageOption) => {
+    setPersonaFinalAnswer("");
+    setPersonaSelectedOptionIds((current) => {
+      if (!personaSelectionMultiple) return current.includes(option.id) ? [] : [option.id];
+      return current.includes(option.id)
+        ? current.filter((id) => id !== option.id)
+        : [...current, option.id];
+    });
+  };
+
+  const submitPersonaConvergence = () => {
+    if (!activePersonaStage) return;
+    const manual = personaFinalAnswer.trim();
+    const selected = activePersonaStage.options.filter((option) =>
+      personaSelectedOptionIds.includes(option.id),
+    );
+    const labels = manual ? [manual] : selected.map((option) => option.label);
+    if (labels.length === 0) return;
+    const visibleAnswer = labels.join("、");
+    const structuredOption: PersonaStageOption = {
+      id: manual
+        ? "__custom__"
+        : selected.length > 1
+          ? "__multiple__"
+          : (selected[0]?.id ?? "answer"),
+      label: visibleAnswer.slice(0, 200),
+    };
+    setPersonaSelectedOptionIds([]);
+    setPersonaFinalAnswer("");
+    void sendPersonaAgentMessage(visibleAnswer, true, false, structuredOption);
+  };
+
+  const submitPersonaFinalCorrection = () => {
+    const manual = personaFinalAnswer.trim();
+    if (!manual) return;
+    setPersonaFinalAnswer("");
+    void sendPersonaAgentMessage(manual, true, false, {
+      id: "__custom__",
+      label: manual.slice(0, 200),
+    });
+  };
+
+  const beginPersonaSetup = async () => {
+    if (isStreaming) return;
     setPersonaDocumentOpen(false);
     setPersonaSetupOpen(true);
-    setPersonaSetupMessages([
-      personaSetupMessage(
-        "assistant",
-        "你好，欢迎使用用户画像助手。我会通过对话了解你的业务并生成可修改的用户画像报告。请先告诉我，你所在的行业是什么？",
-        true,
-      ),
-    ]);
+    setPersonaSetupMessages([]);
     setPersonaReportDraft(null);
     setMessage("");
+    setIsStreaming(true);
+    try {
+      const existing = await window.desktop.personaFlow.load();
+      const flow = existing ?? (await window.desktop.personaFlow.start());
+      setPersonaFlow(flow);
+      setPersonaSelectedOptionIds([]);
+      setPersonaFinalAnswer("");
+      if (flow.flowCompleted && flow.finalSummary) {
+        setPersonaReportDraft(
+          parsePersonaReport(flow.finalSummary) ?? `# 用户画像\n\n${flow.finalSummary.trim()}`,
+        );
+      }
+      const hasUnfinishedProgress =
+        !flow.flowCompleted &&
+        (flow.stateVersion > 0 ||
+          flow.currentStage > 1 ||
+          flow.stages.some((stage) => stage.agentMessages.length > 0));
+      setPersonaResumeChoiceOpen(hasUnfinishedProgress);
+      if (!hasUnfinishedProgress) {
+        const current = flow.stages[flow.currentStage - 1];
+        const welcome = current?.lastAssistantMessage ?? personaStageWelcome(flow.currentStage);
+        setPersonaSetupMessages([personaSetupMessage("assistant", welcome, true)]);
+      }
+    } catch (error) {
+      setPersonaSetupMessages([
+        {
+          ...personaSetupMessage("assistant", ""),
+          status: "error",
+          error: readableError(error),
+        },
+      ]);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  const restartPersonaSetup = async () => {
+    if (isStreaming) return;
+    setMessage("");
+    setPersonaReportDraft(null);
+    setIsStreaming(true);
+    try {
+      const flow = await window.desktop.personaFlow.start();
+      setPersonaFlow(flow);
+      setPersonaResumeChoiceOpen(false);
+      setPersonaSelectedOptionIds([]);
+      setPersonaFinalAnswer("");
+      setPersonaSetupMessages([
+        personaSetupMessage("assistant", personaStageWelcome(flow.currentStage), true),
+      ]);
+    } catch (error) {
+      setPersonaSetupMessages([
+        {
+          ...personaSetupMessage("assistant", ""),
+          status: "error",
+          error: readableError(error),
+        },
+      ]);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  const continuePersonaSetup = () => {
+    if (!personaFlow) return;
+    const restored = loadPersonaTranscript(window.localStorage, personaFlow).map((entry) =>
+      personaSetupMessage(entry.role, entry.content, entry.role === "assistant"),
+    );
+    setPersonaSetupMessages(restored);
+    setPersonaResumeChoiceOpen(false);
+    requestLatestMessage(true);
   };
 
   const selectContentAgent = (type: ContentAgentType) => {
@@ -402,22 +534,19 @@ export function App() {
     setAgentRequestFailed(false);
   };
 
-  function continuePersonaSetupAfterImport(
-    names: string[],
-    previousMessages = personaSetupMessages,
-  ) {
+  function continuePersonaSetupAfterImport(names: string[]) {
     const prompt =
       `我刚添加了这些本地参考资料：${names.join("、")}。` +
       "资料正文已经由客户端在本地读取，并将在本次请求中一并提供。" +
       "请先分析已有资料：信息足够就继续形成用户画像报告；仍有关键缺失时，只追问当前最必要的问题。";
     if (!personaSetupOpen) {
-      setPersonaSetupOpen(true);
-      setPersonaSetupMessages([]);
-      setMessage("");
-      void sendPersonaAgentMessage(prompt, false, [], true);
+      void (async () => {
+        await beginPersonaSetup();
+        await sendPersonaAgentMessage(prompt, false, true);
+      })();
       return;
     }
-    void sendPersonaAgentMessage(prompt, false, previousMessages, true);
+    void sendPersonaAgentMessage(prompt, false, true);
   }
 
   useLayoutEffect(() => {
@@ -428,6 +557,37 @@ export function App() {
     if (ui.appearance.mode !== "system") return;
     return watchSystemTheme(apply);
   }, [ui.appearance]);
+
+  useEffect(() => {
+    if (
+      !personaSetupOpen ||
+      personaResumeChoiceOpen ||
+      isStreaming ||
+      personaConvergenceActive ||
+      personaReportDraft ||
+      personaDocumentOpen
+    ) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => messageInputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [
+    isStreaming,
+    personaConvergenceActive,
+    personaDocumentOpen,
+    personaReportDraft,
+    personaResumeChoiceOpen,
+    personaSetupOpen,
+  ]);
+
+  useEffect(() => {
+    if (!personaFlow || !personaSetupOpen || personaResumeChoiceOpen) return;
+    const visibleMessages = personaSetupMessages
+      .filter((entry) => !entry.hidden && entry.status === "complete" && entry.content.trim())
+      .map((entry) => ({ role: entry.role, content: entry.content }));
+    if (visibleMessages.length === 0) return;
+    savePersonaTranscript(window.localStorage, personaFlow.flowId, visibleMessages);
+  }, [personaFlow, personaResumeChoiceOpen, personaSetupMessages, personaSetupOpen]);
 
   useEffect(() => {
     if (!ui.selectedProjectId && projects.data?.[0]) ui.selectProject(projects.data[0].id);
@@ -742,7 +902,7 @@ export function App() {
               }
               onClick={() => {
                 if (personaRag.data?.ready) readPersonaDocument.mutate();
-                else beginPersonaSetup();
+                else void beginPersonaSetup();
               }}
             >
               {personaSetupOpen
@@ -880,15 +1040,161 @@ export function App() {
                 <header>
                   <div>
                     <strong>建立用户画像</strong>
-                    <small>Agent 会根据已有回答和本地资料动态追问</small>
+                    <small>
+                      {personaFlow
+                        ? `当前为第 ${personaFlow.currentStage}/5 阶段`
+                        : "正在准备五阶段画像流程"}
+                    </small>
                   </div>
+                  {!personaResumeChoiceOpen ? (
+                    <div className="persona-setup-actions">
+                      <button
+                        type="button"
+                        disabled={isStreaming}
+                        onClick={() => void restartPersonaSetup()}
+                      >
+                        重新开始画像
+                      </button>
+                    </div>
+                  ) : null}
                 </header>
-                <div className="message-list" aria-live="polite">
-                  {personaSetupMessages.map((entry) => (
-                    <ChatBubble key={entry.id} message={entry} />
-                  ))}
-                </div>
-                {personaReportDraft ? (
+                {personaResumeChoiceOpen ? (
+                  <section className="persona-resume-choice" aria-labelledby="persona-resume-title">
+                    <div className="persona-resume-copy">
+                      <strong id="persona-resume-title">发现上次未完成的用户画像</strong>
+                      <p>可以恢复上次的全部对话和当前进度，也可以清空进度重新开始。</p>
+                    </div>
+                    <div className="persona-resume-actions">
+                      <button type="button" className="primary" onClick={continuePersonaSetup}>
+                        继续上次画像
+                      </button>
+                      <button type="button" onClick={() => void restartPersonaSetup()}>
+                        重新开始
+                      </button>
+                    </div>
+                  </section>
+                ) : (
+                  <div className="message-list" aria-live="polite">
+                    {personaSetupMessages.map((entry) => (
+                      <ChatBubble key={entry.id} message={entry} />
+                    ))}
+                  </div>
+                )}
+                {!personaResumeChoiceOpen && personaSelectionRequired && activePersonaStage ? (
+                  <fieldset className="persona-convergence-options">
+                    <legend>
+                      {personaSelectionMultiple
+                        ? "已达到本阶段问答上限，可选择多项、手动填写或跳过"
+                        : "已达到本阶段问答上限，请选择一项、手动填写或跳过"}
+                    </legend>
+                    <div className="persona-convergence-choice-list">
+                      {activePersonaStage.options.map((option) => (
+                        <button
+                          type="button"
+                          key={option.id}
+                          disabled={isStreaming}
+                          className={personaSelectedOptionIds.includes(option.id) ? "selected" : ""}
+                          aria-pressed={personaSelectedOptionIds.includes(option.id)}
+                          onClick={() => togglePersonaConvergenceOption(option)}
+                        >
+                          <span aria-hidden="true">
+                            {personaSelectedOptionIds.includes(option.id) ? "✓" : ""}
+                          </span>
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="persona-convergence-manual">
+                      <span>以上都不符合，可以填写最后一次补充</span>
+                      <textarea
+                        value={personaFinalAnswer}
+                        disabled={isStreaming}
+                        placeholder="请输入最终答案"
+                        onChange={(event) => {
+                          setPersonaFinalAnswer(event.target.value);
+                          setPersonaSelectedOptionIds([]);
+                        }}
+                      />
+                    </label>
+                    <div className="persona-convergence-actions">
+                      <button
+                        type="button"
+                        className="skip"
+                        disabled={isStreaming}
+                        onClick={() =>
+                          void sendPersonaAgentMessage("跳过本阶段", true, false, null, true)
+                        }
+                      >
+                        跳过本阶段
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={
+                          isStreaming ||
+                          (!personaFinalAnswer.trim() && personaSelectedOptionIds.length === 0)
+                        }
+                        onClick={submitPersonaConvergence}
+                      >
+                        提交最终答案
+                      </button>
+                    </div>
+                  </fieldset>
+                ) : null}
+                {!personaResumeChoiceOpen &&
+                personaFinalConfirmationRequired &&
+                activePersonaStage ? (
+                  <fieldset className="persona-convergence-options persona-final-confirmation">
+                    <legend>这是本阶段最终结论</legend>
+                    <div className="persona-convergence-actions">
+                      <button
+                        type="button"
+                        className="skip"
+                        disabled={isStreaming}
+                        onClick={() =>
+                          void sendPersonaAgentMessage("跳过本阶段", true, false, null, true)
+                        }
+                      >
+                        跳过本阶段
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={isStreaming}
+                        onClick={() =>
+                          void sendPersonaAgentMessage(
+                            "确认当前结论",
+                            true,
+                            false,
+                            null,
+                            false,
+                            true,
+                          )
+                        }
+                      >
+                        确认并进入下一阶段
+                      </button>
+                    </div>
+                    <label className="persona-convergence-manual">
+                      <span>仍不准确时，可提交最后一次修正</span>
+                      <textarea
+                        value={personaFinalAnswer}
+                        disabled={isStreaming}
+                        placeholder="请输入最终修正"
+                        onChange={(event) => setPersonaFinalAnswer(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="persona-final-correction-submit"
+                      disabled={isStreaming || !personaFinalAnswer.trim()}
+                      onClick={submitPersonaFinalCorrection}
+                    >
+                      提交最终修正
+                    </button>
+                  </fieldset>
+                ) : null}
+                {!personaResumeChoiceOpen && personaReportDraft ? (
                   <article className="persona-draft-card">
                     <header>
                       <div>
@@ -976,7 +1282,7 @@ export function App() {
                   type="button"
                   className="persona-rag-build"
                   disabled={personaRag.isPending}
-                  onClick={beginPersonaSetup}
+                  onClick={() => void beginPersonaSetup()}
                 >
                   <Icon name="spark" />
                   <span>
@@ -1022,12 +1328,17 @@ export function App() {
           </div>
         </div>
         {!personaDocumentOpen &&
-        ((personaSetupOpen && !personaReportDraft) ||
+        ((personaSetupOpen &&
+          !personaResumeChoiceOpen &&
+          !personaReportDraft &&
+          !personaConvergenceActive) ||
           (!personaSetupOpen && conversationMessages.length > 0)) ? (
           <div className="composer-wrap">
             {personaSetupOpen ? (
               <div className="persona-setup-composer-label">
-                正在建立用户画像 · 可随时上传补充资料
+                正在建立用户画像
+                {personaFlow ? ` · 第 ${personaFlow.currentStage}/5 阶段` : ""}
+                {" · 可随时上传补充资料"}
               </div>
             ) : null}
             <fieldset

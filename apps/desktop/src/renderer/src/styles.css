@@ -966,6 +966,167 @@ svg {
   opacity: 0.5;
 }
 
+.persona-resume-choice {
+  display: grid;
+  width: min(520px, 100%);
+  gap: 18px;
+  margin: 72px auto 0;
+  padding: 22px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.persona-resume-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.persona-resume-choice strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.persona-resume-choice p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.persona-resume-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.persona-resume-choice button {
+  padding: 8px 13px;
+  color: var(--text-muted);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.persona-resume-choice button.primary {
+  color: var(--primary-contrast);
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.persona-convergence-options {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 0;
+  padding: 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.persona-convergence-options > legend {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 550;
+}
+
+.persona-convergence-options > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.persona-convergence-options button {
+  min-height: 38px;
+  padding: 9px 11px;
+  color: var(--text-muted);
+  text-align: left;
+  background: var(--bg-element);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.persona-convergence-options button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--primary);
+}
+
+.persona-convergence-choice-list button {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.persona-convergence-choice-list button > span {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  place-items: center;
+  margin-top: 1px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: white;
+  font-size: 9px;
+}
+
+.persona-convergence-choice-list button.selected {
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 12%, var(--bg-element));
+  border-color: var(--primary);
+}
+
+.persona-convergence-choice-list button.selected > span {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.persona-convergence-manual {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.persona-convergence-manual textarea {
+  min-height: 68px;
+  resize: vertical;
+  padding: 9px 10px;
+  color: var(--text);
+  background: var(--bg-element);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.persona-convergence-manual textarea:focus {
+  border-color: var(--primary);
+}
+
+.persona-convergence-options .persona-convergence-actions button {
+  text-align: center;
+}
+
+.persona-final-confirmation {
+  gap: 12px;
+}
+
+.persona-convergence-options button.skip {
+  color: var(--text-dim);
+  border-style: dashed;
+}
+
+.persona-convergence-options button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .persona-trigger-actions {
   display: flex;
   width: min(760px, 100%);
@@ -3417,4 +3578,12 @@ svg {
 .persona-delete-dialog footer button:disabled {
   cursor: default;
   opacity: 0.55;
+}
+
+.persona-convergence-options .persona-convergence-actions button.primary,
+.persona-convergence-options button.persona-final-correction-submit {
+  color: white;
+  background: var(--primary);
+  border-color: var(--primary);
+  text-align: center;
 }

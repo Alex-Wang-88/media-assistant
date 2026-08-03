@@ -29,6 +29,9 @@ Thumbs.db
 # Tooling / agent state
 .workbuddy/
 
+# Local-only remote Agent prompts
+docs/persona-agent-prompts.md
+
 # Private platform login cookies and sessions
 private-platform-sessions/
 

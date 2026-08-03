@@ -6,6 +6,8 @@ import {
   createProjectInputSchema,
   deleteProjectInputSchema,
   deviceCommandSchema,
+  personaAgentTurnResponseSchema,
+  personaFlowStateSchema,
   personaRagDroppedFilesSchema,
   personaRagStatusSchema,
   personaReportInputSchema,
@@ -61,6 +63,83 @@ describe("desktop contracts", () => {
       }).success,
     ).toBe(true);
     expect(personaReportInputSchema.safeParse({ markdown: " " }).success).toBe(false);
+  });
+
+  it("requires exactly five ordered Persona stages", () => {
+    const stages = Array.from({ length: 5 }, (_value, index) => ({
+      stage: index + 1,
+      status: index === 0 ? "collecting" : "not_started",
+      revisionCount: 0,
+      conversationId: null,
+      stageData: {},
+      result: {},
+    }));
+    const flow = {
+      version: 1,
+      flowId: crypto.randomUUID(),
+      stateVersion: 0,
+      flowCompleted: false,
+      currentStage: 1,
+      stages,
+      finalSummary: null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    expect(personaFlowStateSchema.safeParse(flow).success).toBe(true);
+    expect(
+      personaFlowStateSchema.safeParse({
+        ...flow,
+        stages: stages.map((stage, index) => ({ ...stage, stage: index === 1 ? 1 : stage.stage })),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires Agent responses to include content for their declared action", () => {
+    const response = {
+      requestId: crypto.randomUUID(),
+      flowId: crypto.randomUUID(),
+      stateVersion: 0,
+      stage: 1,
+      action: "ask_question",
+      question: null,
+      conclusion: null,
+      resultPatch: {},
+      finalSummary: null,
+    };
+
+    expect(personaAgentTurnResponseSchema.safeParse(response).success).toBe(false);
+    expect(
+      personaAgentTurnResponseSchema.safeParse({
+        ...response,
+        question: "你现在主要提供什么产品或服务？",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("requires two to four structured options for selection convergence", () => {
+    const response = {
+      requestId: crypto.randomUUID(),
+      flowId: crypto.randomUUID(),
+      stateVersion: 0,
+      stage: 1,
+      action: "show_selection",
+      question: "请选择更符合实际情况的一项。",
+      conclusion: null,
+      resultPatch: {},
+      options: [{ id: "A", label: "选项 A" }],
+      finalSummary: null,
+    };
+
+    expect(personaAgentTurnResponseSchema.safeParse(response).success).toBe(false);
+    expect(
+      personaAgentTurnResponseSchema.safeParse({
+        ...response,
+        options: [
+          { id: "A", label: "选项 A" },
+          { id: "B", label: "选项 B" },
+        ],
+      }).success,
+    ).toBe(true);
   });
 
   it("rejects publishing without explicit approval", () => {

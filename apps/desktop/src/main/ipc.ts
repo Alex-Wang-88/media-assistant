@@ -13,6 +13,7 @@ import {
   knowledgeSearchInputSchema,
   listOutputsInputSchema,
   persistedPublishDraftStateSchema,
+  personaFlowTurnInputSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
   personaRagSaveDocumentInputSchema,
@@ -37,7 +38,18 @@ import {
   listBilibiliAccounts,
   openAndFillBilibili,
 } from "./bilibili-publisher";
-import { getAgentStatus, streamChat } from "./chat-client";
+import { getAgentStatus, streamChat, turnPersonaAgent } from "./chat-client";
+import {
+  applyPersonaAgentTurnResponse,
+  buildPersonaAgentTurnRequest,
+  createFallbackPersonaConclusionResponse,
+  createFallbackPersonaSelectionResponse,
+  createLocalPersonaStageResponse,
+  createPersonaFlowState,
+  ensurePersonaStageConversation,
+  isPersonaConfirmationMessage,
+  normalizePersonaAgentTurnResponse,
+} from "./persona-flow";
 import type { Workspace } from "./workspace";
 
 type WorkspaceAccess = {
@@ -99,6 +111,122 @@ export function registerIpc(access: WorkspaceAccess): void {
       personaRagDroppedFilesSchema.parse(raw),
     ),
   }));
+  ipcMain.handle(ipcChannels.personaFlowLoad, () => requireWorkspace(access).loadPersonaFlow());
+  ipcMain.handle(ipcChannels.personaFlowStart, () => {
+    const workspace = requireWorkspace(access);
+    const flow = createPersonaFlowState();
+    workspace.savePersonaFlow(flow);
+    return flow;
+  });
+  ipcMain.handle(ipcChannels.personaFlowTurn, async (_event, raw) => {
+    const input = personaFlowTurnInputSchema.parse(raw);
+    const workspace = requireWorkspace(access);
+    const stored = workspace.loadPersonaFlow();
+    if (!stored) throw new Error("当前没有正在进行的用户画像流程");
+    const flow = ensurePersonaStageConversation(stored);
+    workspace.savePersonaFlow(flow);
+    const activeStage = flow.stages[flow.currentStage - 1];
+    const localConfirmation =
+      input.confirmStage ||
+      (activeStage?.status === "waiting_confirmation" &&
+        isPersonaConfirmationMessage(input.userMessage));
+    if (input.skipStage || localConfirmation) {
+      const requestEvent = input.skipStage ? "skip_stage" : "confirm_stage";
+      const response = createLocalPersonaStageResponse(flow, input.skipStage);
+      const next = applyPersonaAgentTurnResponse(
+        flow,
+        response,
+        undefined,
+        undefined,
+        requestEvent,
+      );
+      workspace.savePersonaFlow(next);
+      return { flow: next, response };
+    }
+    const requestEvent = input.skipStage
+      ? "skip_stage"
+      : input.selectedOption
+        ? "select_option"
+        : "user_message";
+    const request = buildPersonaAgentTurnRequest(
+      flow,
+      requestEvent,
+      input.userMessage,
+      input.includePersonaReferences ? workspace.personaRagReferenceContext() : null,
+      input.selectedOption,
+    );
+    const agentTurn = await turnPersonaAgent(request);
+    let response = normalizePersonaAgentTurnResponse(flow, agentTurn.response);
+    if (
+      requestEvent === "select_option" &&
+      response.action !== "present_conclusion" &&
+      response.action !== "complete_stage" &&
+      response.action !== "generate_final_summary"
+    ) {
+      response = createFallbackPersonaConclusionResponse(
+        flow,
+        request.requestId,
+        input.userMessage,
+        response.resultPatch,
+      );
+    }
+    if (
+      request.mustConverge &&
+      requestEvent === "user_message" &&
+      response.action !== "show_selection" &&
+      response.action !== "complete_stage" &&
+      response.action !== "generate_final_summary"
+    ) {
+      response = createFallbackPersonaSelectionResponse(flow, request.requestId, input.userMessage);
+    }
+    let next = applyPersonaAgentTurnResponse(
+      flow,
+      response,
+      undefined,
+      {
+        userMessage: agentTurn.userMessage,
+        assistantMessage: agentTurn.assistantMessage,
+      },
+      requestEvent,
+    );
+    const nextActiveStage = next.stages[next.currentStage - 1];
+    if (
+      requestEvent === "user_message" &&
+      !request.mustConverge &&
+      next.currentStage === flow.currentStage &&
+      nextActiveStage?.questionCount === request.maxQuestionCount &&
+      nextActiveStage.status !== "selection_required"
+    ) {
+      const convergenceRequest = buildPersonaAgentTurnRequest(
+        next,
+        "stage_start",
+        null,
+        input.includePersonaReferences ? workspace.personaRagReferenceContext() : null,
+      );
+      const convergenceTurn = await turnPersonaAgent(convergenceRequest);
+      let convergenceResponse = normalizePersonaAgentTurnResponse(next, convergenceTurn.response);
+      if (convergenceResponse.action !== "show_selection") {
+        convergenceResponse = createFallbackPersonaSelectionResponse(
+          next,
+          convergenceRequest.requestId,
+          input.userMessage,
+        );
+      }
+      next = applyPersonaAgentTurnResponse(
+        next,
+        convergenceResponse,
+        undefined,
+        {
+          userMessage: convergenceTurn.userMessage,
+          assistantMessage: convergenceTurn.assistantMessage,
+        },
+        "stage_start",
+      );
+      response = convergenceResponse;
+    }
+    workspace.savePersonaFlow(next);
+    return { flow: next, response };
+  });
   ipcMain.handle(ipcChannels.filesListOutputs, (_event, raw) => {
     const input = listOutputsInputSchema.parse(raw);
     return requireWorkspace(access).listOutputs(input.projectId);

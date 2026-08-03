@@ -1,6 +1,10 @@
-import type { ChatSendInput, ChatStreamEvent } from "@yoom/desktop-contracts";
+import type {
+  ChatSendInput,
+  ChatStreamEvent,
+  PersonaAgentTurnRequest,
+} from "@yoom/desktop-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getAgentStatus, streamChat } from "../src/main/chat-client";
+import { getAgentStatus, streamChat, turnPersonaAgent } from "../src/main/chat-client";
 
 const input: ChatSendInput = {
   requestId: crypto.randomUUID(),
@@ -9,6 +13,33 @@ const input: ChatSendInput = {
   knowledgeEnabled: true,
   strategyEnabled: false,
   autoExecute: false,
+};
+
+const personaInput: PersonaAgentTurnRequest = {
+  requestId: crypto.randomUUID(),
+  flowId: crypto.randomUUID(),
+  stateVersion: 0,
+  stage: 3,
+  event: "user_message",
+  userMessage: "连锁家具门店采购",
+  selectedOption: null,
+  maxQuestionCount: 5,
+  mustConverge: false,
+  referenceContext: null,
+  stageState: {
+    stage: 3,
+    status: "collecting",
+    revisionCount: 0,
+    questionCount: 0,
+    mode: "normal",
+    options: [],
+    conversationId: crypto.randomUUID(),
+    lastAssistantMessage: null,
+    agentMessages: [],
+    stageData: {},
+    result: {},
+  },
+  confirmedData: {},
 };
 
 afterEach(() => vi.unstubAllGlobals());
@@ -78,5 +109,45 @@ describe("chat API adapter", () => {
       message: "API 未配置",
       retryable: true,
     });
+  });
+
+  it("sends structured Persona turns to the dedicated stage endpoint", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            response: {
+              requestId: personaInput.requestId,
+              flowId: personaInput.flowId,
+              stateVersion: 0,
+              stage: 3,
+              action: "ask_question",
+              question: "第3/5阶段：这类客户当前最明显的问题是什么？",
+              conclusion: null,
+              resultPatch: {},
+              options: [],
+              finalSummary: null,
+            },
+            userMessage: "用户本次回答：\n连锁家具门店采购",
+            assistantMessage: '{"action":"ask_question"}',
+          }),
+          { headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(turnPersonaAgent(personaInput, "http://api.test")).resolves.toMatchObject({
+      response: {
+        stage: 3,
+        action: "ask_question",
+      },
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "http://api.test/v1/persona/stages/turn",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(personaInput),
+      }),
+    );
   });
 });
