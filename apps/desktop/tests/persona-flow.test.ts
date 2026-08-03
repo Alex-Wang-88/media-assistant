@@ -7,8 +7,12 @@ import { describe, expect, it } from "vitest";
 import {
   applyPersonaAgentTurnResponse,
   buildPersonaAgentTurnRequest,
+  buildPersonaReport,
+  createFallbackPersonaConclusionResponse,
+  createLocalPersonaStageResponse,
   createPersonaFlowState,
   ensurePersonaStageConversation,
+  isPersonaConfirmationMessage,
 } from "../src/main/persona-flow";
 
 function response(
@@ -245,7 +249,7 @@ describe("local Persona flow", () => {
     {
       stage: 4,
       expected:
-        "你最值得强化的优势是拥有可核验的长期供应商合作，内容需要持续突出这一点。\n\n这个判断符合你的实际情况吗？",
+        "你最值得强化的核心优势是拥有可核验的长期供应商合作，内容需要持续突出这些真实优势。\n\n这个判断符合你的实际情况吗？",
     },
     {
       stage: 5,
@@ -267,7 +271,7 @@ describe("local Persona flow", () => {
     expect(next.stages[stage - 1]?.lastAssistantMessage).toBe(expected);
   });
 
-  it("counts only remote questions and forces option convergence after five", () => {
+  it("counts every Agent response that asks for another user answer", () => {
     let flow = createPersonaFlowState();
     expect(flow.stages[0]?.questionCount).toBe(0);
 
@@ -291,7 +295,30 @@ describe("local Persona flow", () => {
         flow,
         response(flow, { question: "第1/5阶段：不允许出现的第六个问题" }),
       ),
-    ).toThrow("必须返回收敛选项");
+    ).toThrow("必须返回最终选项");
+  });
+
+  it("counts confirmation conclusions toward the five-answer limit", () => {
+    let flow = createPersonaFlowState();
+    for (let count = 1; count <= 5; count += 1) {
+      flow = applyPersonaAgentTurnResponse(
+        flow,
+        response(flow, {
+          action: "present_conclusion",
+          question: null,
+          conclusion: `第 ${count} 次结论，请确认。`,
+          resultPatch: readyPatch(1),
+        }),
+      );
+    }
+    expect(flow.stages[0]?.questionCount).toBe(5);
+    expect(buildPersonaAgentTurnRequest(flow, "user_message", "仍不准确").mustConverge).toBe(true);
+  });
+
+  it("recognizes only concise confirmation messages for local stage confirmation", () => {
+    expect(isPersonaConfirmationMessage("是的")).toBe(true);
+    expect(isPersonaConfirmationMessage("可以")).toBe(true);
+    expect(isPersonaConfirmationMessage("可以，但是网红宣传不是背书")).toBe(false);
   });
 
   it("stores Agent-generated options and sends a clicked option as structured input", () => {
@@ -468,7 +495,74 @@ describe("local Persona flow", () => {
       }),
     );
     expect(completed.flowCompleted).toBe(true);
-    expect(completed.finalSummary).toBe("完整用户画像");
+    expect(completed.finalSummary).toContain("# 用户画像\n\n## 你卖什么");
+    expect(completed.finalSummary).toContain("## 核心转化目标\n\n获得咨询");
     expect(completed.stages[4]?.status).toBe("confirmed");
+  });
+
+  it("builds a layered local report without leaking internal conversion keys", () => {
+    let flow = createPersonaFlowState();
+    for (let stage = 1; stage < 5; stage += 1) {
+      flow = applyPersonaAgentTurnResponse(
+        flow,
+        response(flow, {
+          action: "complete_stage",
+          question: null,
+          resultPatch: readyPatch(stage),
+        }),
+      );
+    }
+    const report = buildPersonaReport(flow, {
+      primary_conversion_goal: "wants_store_visits",
+      secondary_conversion_goals: ["wants_consultations", "wants_leads"],
+    });
+    expect(report).toContain("## 核心转化目标\n\n促进到店");
+    expect(report).toContain("## 辅助转化目标\n\n获得咨询、获得留资");
+    expect(report).not.toContain("wants_");
+  });
+
+  it("confirms a final stage locally without another Agent decision", () => {
+    let flow = createPersonaFlowState();
+    flow = applyPersonaAgentTurnResponse(
+      flow,
+      response(flow, {
+        action: "present_conclusion",
+        question: null,
+        conclusion: "当前结论，请确认。",
+        resultPatch: readyPatch(1),
+      }),
+    );
+    const localResponse = createLocalPersonaStageResponse(flow, false);
+    const confirmed = applyPersonaAgentTurnResponse(
+      flow,
+      localResponse,
+      undefined,
+      undefined,
+      "confirm_stage",
+    );
+    expect(confirmed.currentStage).toBe(2);
+    expect(confirmed.stages[0]?.status).toBe("confirmed");
+  });
+
+  it("turns an invalid post-selection Agent action into one final conclusion", () => {
+    let flow = createPersonaFlowState();
+    flow = applyPersonaAgentTurnResponse(
+      flow,
+      response(flow, {
+        action: "present_conclusion",
+        question: null,
+        conclusion: "当前结论，请确认。",
+        resultPatch: readyPatch(1),
+      }),
+    );
+    const fallback = createFallbackPersonaConclusionResponse(
+      flow,
+      crypto.randomUUID(),
+      "以医生实力和网红宣传为最终方向",
+    );
+    expect(fallback.action).toBe("present_conclusion");
+    expect(fallback.conclusion).toContain("以医生实力和网红宣传为最终方向");
+    expect(fallback.conclusion).toContain("这个判断符合你的实际情况吗");
+    expect(fallback.options).toEqual([]);
   });
 });

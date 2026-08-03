@@ -358,9 +358,18 @@ export const personaFlowTurnInputSchema = z
     includePersonaReferences: z.boolean().default(false),
     selectedOption: personaStageOptionSchema.nullable().default(null),
     skipStage: z.boolean().default(false),
+    confirmStage: z.boolean().default(false),
   })
-  .refine((input) => !(input.selectedOption && input.skipStage), {
-    message: "选择选项和跳过阶段不能同时发生",
+  .refine(
+    (input) =>
+      [Boolean(input.selectedOption), input.skipStage, input.confirmStage].filter(Boolean).length <=
+      1,
+    {
+      message: "选择选项、确认阶段和跳过阶段不能同时发生",
+    },
+  )
+  .refine((input) => !input.confirmStage || input.userMessage === "确认当前结论", {
+    message: "确认阶段必须使用固定确认文字",
   });
 export type PersonaFlowTurnInput = z.infer<typeof personaFlowTurnInputSchema>;
 

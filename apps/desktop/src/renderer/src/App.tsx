@@ -98,6 +98,8 @@ export function App() {
   const [personaSetupMessages, setPersonaSetupMessages] = useState<ConversationMessage[]>([]);
   const [personaFlow, setPersonaFlow] = useState<PersonaFlowState | null>(null);
   const [personaReportDraft, setPersonaReportDraft] = useState<string | null>(null);
+  const [personaSelectedOptionIds, setPersonaSelectedOptionIds] = useState<string[]>([]);
+  const [personaFinalAnswer, setPersonaFinalAnswer] = useState("");
   const [personaDocumentOpen, setPersonaDocumentOpen] = useState(false);
   const [personaDocumentPath, setPersonaDocumentPath] = useState("");
   const [personaDocumentContent, setPersonaDocumentContent] = useState("");
@@ -293,6 +295,11 @@ export function App() {
     importPersonaRagFiles.isPending || importDroppedPersonaRagFiles.isPending;
   const activePersonaStage = personaFlow?.stages[personaFlow.currentStage - 1] ?? null;
   const personaSelectionRequired = activePersonaStage?.status === "selection_required";
+  const personaFinalConfirmationRequired =
+    activePersonaStage?.status === "waiting_confirmation" && activePersonaStage.questionCount >= 5;
+  const personaConvergenceActive =
+    Boolean(personaSelectionRequired) || Boolean(personaFinalConfirmationRequired);
+  const personaSelectionMultiple = personaFlow?.currentStage === 5;
   const handlePersonaDragOver = (event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -312,6 +319,7 @@ export function App() {
     includeReferences = false,
     selectedOption: PersonaStageOption | null = null,
     skipStage = false,
+    confirmStage = false,
   ) => {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt || isStreaming) return;
@@ -337,8 +345,11 @@ export function App() {
         includePersonaReferences: includeReferences,
         selectedOption,
         skipStage,
+        confirmStage,
       });
       setPersonaFlow(result.flow);
+      setPersonaSelectedOptionIds([]);
+      setPersonaFinalAnswer("");
       let assistantContent = "";
       if (result.response.action === "ask_question") {
         assistantContent = result.response.question ?? "";
@@ -382,6 +393,48 @@ export function App() {
     }
   };
 
+  const togglePersonaConvergenceOption = (option: PersonaStageOption) => {
+    setPersonaFinalAnswer("");
+    setPersonaSelectedOptionIds((current) => {
+      if (!personaSelectionMultiple) return current.includes(option.id) ? [] : [option.id];
+      return current.includes(option.id)
+        ? current.filter((id) => id !== option.id)
+        : [...current, option.id];
+    });
+  };
+
+  const submitPersonaConvergence = () => {
+    if (!activePersonaStage) return;
+    const manual = personaFinalAnswer.trim();
+    const selected = activePersonaStage.options.filter((option) =>
+      personaSelectedOptionIds.includes(option.id),
+    );
+    const labels = manual ? [manual] : selected.map((option) => option.label);
+    if (labels.length === 0) return;
+    const visibleAnswer = labels.join("、");
+    const structuredOption: PersonaStageOption = {
+      id: manual
+        ? "__custom__"
+        : selected.length > 1
+          ? "__multiple__"
+          : (selected[0]?.id ?? "answer"),
+      label: visibleAnswer.slice(0, 200),
+    };
+    setPersonaSelectedOptionIds([]);
+    setPersonaFinalAnswer("");
+    void sendPersonaAgentMessage(visibleAnswer, true, false, structuredOption);
+  };
+
+  const submitPersonaFinalCorrection = () => {
+    const manual = personaFinalAnswer.trim();
+    if (!manual) return;
+    setPersonaFinalAnswer("");
+    void sendPersonaAgentMessage(manual, true, false, {
+      id: "__custom__",
+      label: manual.slice(0, 200),
+    });
+  };
+
   const beginPersonaSetup = async () => {
     if (isStreaming) return;
     setPersonaDocumentOpen(false);
@@ -394,6 +447,8 @@ export function App() {
       const existing = await window.desktop.personaFlow.load();
       const flow = existing ?? (await window.desktop.personaFlow.start());
       setPersonaFlow(flow);
+      setPersonaSelectedOptionIds([]);
+      setPersonaFinalAnswer("");
       if (flow.flowCompleted && flow.finalSummary) {
         setPersonaReportDraft(
           parsePersonaReport(flow.finalSummary) ?? `# 用户画像\n\n${flow.finalSummary.trim()}`,
@@ -423,6 +478,8 @@ export function App() {
     try {
       const flow = await window.desktop.personaFlow.start();
       setPersonaFlow(flow);
+      setPersonaSelectedOptionIds([]);
+      setPersonaFinalAnswer("");
       setPersonaSetupMessages([
         personaSetupMessage("assistant", personaStageWelcome(flow.currentStage), true),
       ]);
@@ -954,36 +1011,114 @@ export function App() {
                 </div>
                 {personaSelectionRequired && activePersonaStage ? (
                   <fieldset className="persona-convergence-options">
-                    <legend>请选择更符合实际情况的一项</legend>
-                    <div>
+                    <legend>
+                      {personaSelectionMultiple
+                        ? "已达到本阶段问答上限，可选择多项、手动填写或跳过"
+                        : "已达到本阶段问答上限，请选择一项、手动填写或跳过"}
+                    </legend>
+                    <div className="persona-convergence-choice-list">
                       {activePersonaStage.options.map((option) => (
                         <button
                           type="button"
                           key={option.id}
                           disabled={isStreaming}
-                          onClick={() =>
-                            void sendPersonaAgentMessage(
-                              `我选择：${option.label}`,
-                              true,
-                              false,
-                              option,
-                            )
-                          }
+                          className={personaSelectedOptionIds.includes(option.id) ? "selected" : ""}
+                          aria-pressed={personaSelectedOptionIds.includes(option.id)}
+                          onClick={() => togglePersonaConvergenceOption(option)}
                         >
+                          <span aria-hidden="true">
+                            {personaSelectedOptionIds.includes(option.id) ? "✓" : ""}
+                          </span>
                           {option.label}
                         </button>
                       ))}
+                    </div>
+                    <label className="persona-convergence-manual">
+                      <span>以上都不符合，可以填写最后一次补充</span>
+                      <textarea
+                        value={personaFinalAnswer}
+                        disabled={isStreaming}
+                        placeholder="请输入最终答案"
+                        onChange={(event) => {
+                          setPersonaFinalAnswer(event.target.value);
+                          setPersonaSelectedOptionIds([]);
+                        }}
+                      />
+                    </label>
+                    <div className="persona-convergence-actions">
                       <button
                         type="button"
                         className="skip"
                         disabled={isStreaming}
                         onClick={() =>
-                          void sendPersonaAgentMessage("暂时跳过本阶段", true, false, null, true)
+                          void sendPersonaAgentMessage("跳过本阶段", true, false, null, true)
                         }
                       >
-                        暂时跳过
+                        跳过本阶段
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={
+                          isStreaming ||
+                          (!personaFinalAnswer.trim() && personaSelectedOptionIds.length === 0)
+                        }
+                        onClick={submitPersonaConvergence}
+                      >
+                        提交最终答案
                       </button>
                     </div>
+                  </fieldset>
+                ) : null}
+                {personaFinalConfirmationRequired && activePersonaStage ? (
+                  <fieldset className="persona-convergence-options persona-final-confirmation">
+                    <legend>这是本阶段最终结论</legend>
+                    <div className="persona-convergence-actions">
+                      <button
+                        type="button"
+                        className="skip"
+                        disabled={isStreaming}
+                        onClick={() =>
+                          void sendPersonaAgentMessage("跳过本阶段", true, false, null, true)
+                        }
+                      >
+                        跳过本阶段
+                      </button>
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={isStreaming}
+                        onClick={() =>
+                          void sendPersonaAgentMessage(
+                            "确认当前结论",
+                            true,
+                            false,
+                            null,
+                            false,
+                            true,
+                          )
+                        }
+                      >
+                        确认并进入下一阶段
+                      </button>
+                    </div>
+                    <label className="persona-convergence-manual">
+                      <span>仍不准确时，可提交最后一次修正</span>
+                      <textarea
+                        value={personaFinalAnswer}
+                        disabled={isStreaming}
+                        placeholder="请输入最终修正"
+                        onChange={(event) => setPersonaFinalAnswer(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="persona-final-correction-submit"
+                      disabled={isStreaming || !personaFinalAnswer.trim()}
+                      onClick={submitPersonaFinalCorrection}
+                    >
+                      提交最终修正
+                    </button>
                   </fieldset>
                 ) : null}
                 {personaReportDraft ? (
@@ -1120,7 +1255,7 @@ export function App() {
           </div>
         </div>
         {!personaDocumentOpen &&
-        ((personaSetupOpen && !personaReportDraft && !personaSelectionRequired) ||
+        ((personaSetupOpen && !personaReportDraft && !personaConvergenceActive) ||
           (!personaSetupOpen && conversationMessages.length > 0)) ? (
           <div className="composer-wrap">
             {personaSetupOpen ? (

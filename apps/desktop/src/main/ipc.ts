@@ -42,8 +42,12 @@ import { getAgentStatus, streamChat, turnPersonaAgent } from "./chat-client";
 import {
   applyPersonaAgentTurnResponse,
   buildPersonaAgentTurnRequest,
+  createFallbackPersonaConclusionResponse,
+  createFallbackPersonaSelectionResponse,
+  createLocalPersonaStageResponse,
   createPersonaFlowState,
   ensurePersonaStageConversation,
+  isPersonaConfirmationMessage,
   normalizePersonaAgentTurnResponse,
 } from "./persona-flow";
 import type { Workspace } from "./workspace";
@@ -121,6 +125,24 @@ export function registerIpc(access: WorkspaceAccess): void {
     if (!stored) throw new Error("当前没有正在进行的用户画像流程");
     const flow = ensurePersonaStageConversation(stored);
     workspace.savePersonaFlow(flow);
+    const activeStage = flow.stages[flow.currentStage - 1];
+    const localConfirmation =
+      input.confirmStage ||
+      (activeStage?.status === "waiting_confirmation" &&
+        isPersonaConfirmationMessage(input.userMessage));
+    if (input.skipStage || localConfirmation) {
+      const requestEvent = input.skipStage ? "skip_stage" : "confirm_stage";
+      const response = createLocalPersonaStageResponse(flow, input.skipStage);
+      const next = applyPersonaAgentTurnResponse(
+        flow,
+        response,
+        undefined,
+        undefined,
+        requestEvent,
+      );
+      workspace.savePersonaFlow(next);
+      return { flow: next, response };
+    }
     const requestEvent = input.skipStage
       ? "skip_stage"
       : input.selectedOption
@@ -134,8 +156,30 @@ export function registerIpc(access: WorkspaceAccess): void {
       input.selectedOption,
     );
     const agentTurn = await turnPersonaAgent(request);
-    const response = normalizePersonaAgentTurnResponse(flow, agentTurn.response);
-    const next = applyPersonaAgentTurnResponse(
+    let response = normalizePersonaAgentTurnResponse(flow, agentTurn.response);
+    if (
+      requestEvent === "select_option" &&
+      response.action !== "present_conclusion" &&
+      response.action !== "complete_stage" &&
+      response.action !== "generate_final_summary"
+    ) {
+      response = createFallbackPersonaConclusionResponse(
+        flow,
+        request.requestId,
+        input.userMessage,
+        response.resultPatch,
+      );
+    }
+    if (
+      request.mustConverge &&
+      requestEvent === "user_message" &&
+      response.action !== "show_selection" &&
+      response.action !== "complete_stage" &&
+      response.action !== "generate_final_summary"
+    ) {
+      response = createFallbackPersonaSelectionResponse(flow, request.requestId, input.userMessage);
+    }
+    let next = applyPersonaAgentTurnResponse(
       flow,
       response,
       undefined,
@@ -145,6 +189,41 @@ export function registerIpc(access: WorkspaceAccess): void {
       },
       requestEvent,
     );
+    const nextActiveStage = next.stages[next.currentStage - 1];
+    if (
+      requestEvent === "user_message" &&
+      !request.mustConverge &&
+      next.currentStage === flow.currentStage &&
+      nextActiveStage?.questionCount === request.maxQuestionCount &&
+      nextActiveStage.status !== "selection_required"
+    ) {
+      const convergenceRequest = buildPersonaAgentTurnRequest(
+        next,
+        "stage_start",
+        null,
+        input.includePersonaReferences ? workspace.personaRagReferenceContext() : null,
+      );
+      const convergenceTurn = await turnPersonaAgent(convergenceRequest);
+      let convergenceResponse = normalizePersonaAgentTurnResponse(next, convergenceTurn.response);
+      if (convergenceResponse.action !== "show_selection") {
+        convergenceResponse = createFallbackPersonaSelectionResponse(
+          next,
+          convergenceRequest.requestId,
+          input.userMessage,
+        );
+      }
+      next = applyPersonaAgentTurnResponse(
+        next,
+        convergenceResponse,
+        undefined,
+        {
+          userMessage: convergenceTurn.userMessage,
+          assistantMessage: convergenceTurn.assistantMessage,
+        },
+        "stage_start",
+      );
+      response = convergenceResponse;
+    }
     workspace.savePersonaFlow(next);
     return { flow: next, response };
   });

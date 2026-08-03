@@ -90,6 +90,15 @@ export function applyPersonaAgentTurnResponse(
   const stageIndex = response.stage - 1;
   const stage = stages[stageIndex];
   if (!stage) throw new Error("当前画像阶段不存在");
+  if (
+    stage.questionCount >= PERSONA_STAGE_QUESTION_LIMIT &&
+    requestEvent === "user_message" &&
+    response.action !== "show_selection" &&
+    response.action !== "complete_stage" &&
+    response.action !== "generate_final_summary"
+  ) {
+    throw new Error("当前阶段已达到问答上限，Agent 必须返回最终选项");
+  }
   const stageData = mergeStageData(stage.stageData, response.resultPatch);
   const agentMessages = conversationTurn
     ? [
@@ -128,6 +137,7 @@ export function applyPersonaAgentTurnResponse(
     stages[stageIndex] = {
       ...stages[stageIndex],
       status: "waiting_confirmation",
+      questionCount: Math.min(stage.questionCount + 1, PERSONA_STAGE_QUESTION_LIMIT),
       mode: "normal",
       options: [],
       lastAssistantMessage: response.conclusion,
@@ -201,6 +211,17 @@ export function normalizePersonaAgentTurnResponse(
     normalizeMessage(response.question) === normalizeMessage(stage.lastAssistantMessage) &&
     !hasMeaningfulPatch(resultPatch, stage.stageData);
 
+  if (response.action === "show_selection" && stage.questionCount < PERSONA_STAGE_QUESTION_LIMIT) {
+    return personaAgentTurnResponseSchema.parse({
+      ...response,
+      action: "ask_question",
+      conclusion: null,
+      resultPatch,
+      options: [],
+      finalSummary: null,
+    });
+  }
+
   if (repeatedQuestion) {
     return personaAgentTurnResponseSchema.parse({
       ...response,
@@ -212,7 +233,10 @@ export function normalizePersonaAgentTurnResponse(
       finalSummary: null,
     });
   }
-  if (response.action === "present_conclusion") {
+  if (
+    response.action === "present_conclusion" &&
+    !response.conclusion?.includes("你最后补充的是：")
+  ) {
     const conclusion = formatPersonaStageConclusion(
       response.stage,
       mergeStageData(stage.stageData, resultPatch),
@@ -225,6 +249,14 @@ export function normalizePersonaAgentTurnResponse(
         options: [],
       });
     }
+  }
+  if (response.action === "generate_final_summary") {
+    return personaAgentTurnResponseSchema.parse({
+      ...response,
+      resultPatch,
+      options: [],
+      finalSummary: buildPersonaReport(current, resultPatch),
+    });
   }
   if (
     crossedStageBoundary &&
@@ -252,6 +284,137 @@ export function normalizePersonaAgentTurnResponse(
     });
   }
   return personaAgentTurnResponseSchema.parse({ ...response, resultPatch, options });
+}
+
+export function createLocalPersonaStageResponse(
+  flow: PersonaFlowState,
+  skipped: boolean,
+): PersonaAgentTurnResponse {
+  const current = personaFlowStateSchema.parse(flow);
+  if (current.flowCompleted) throw new Error("本轮画像流程已经完成");
+  const stage = requireStage(current, current.currentStage);
+  if (!skipped && stage.status !== "waiting_confirmation") {
+    throw new Error("当前阶段还没有可确认的结论");
+  }
+  const finalStage = current.currentStage === PERSONA_STAGE_COUNT;
+  return personaAgentTurnResponseSchema.parse({
+    requestId: randomUUID(),
+    flowId: current.flowId,
+    stateVersion: current.stateVersion,
+    stage: current.currentStage,
+    action: finalStage ? "generate_final_summary" : "complete_stage",
+    question: null,
+    conclusion: null,
+    resultPatch: {},
+    options: [],
+    finalSummary: finalStage ? buildPersonaReport(current) : null,
+  });
+}
+
+export function createFallbackPersonaSelectionResponse(
+  flow: PersonaFlowState,
+  requestId: string,
+  userMessage: string,
+): PersonaAgentTurnResponse {
+  const current = personaFlowStateSchema.parse(flow);
+  const stage = requireStage(current, current.currentStage);
+  const previous = (stage.lastAssistantMessage ?? "采用当前阶段已有判断")
+    .replace(/\s*这个判断符合你的实际情况吗[？?]?\s*$/u, "")
+    .trim()
+    .slice(0, 200);
+  const latest = userMessage.trim().slice(0, 200);
+  const options = [
+    { id: "current_conclusion", label: previous || "采用当前阶段已有判断" },
+    { id: "latest_answer", label: latest || "以最后一次补充为准" },
+  ].filter(
+    (option, index, items) => items.findIndex((item) => item.label === option.label) === index,
+  );
+  if (options.length < 2) {
+    options.push({ id: "manual_answer", label: "以上都不符合，我要手动填写" });
+  }
+  return personaAgentTurnResponseSchema.parse({
+    requestId,
+    flowId: current.flowId,
+    stateVersion: current.stateVersion,
+    stage: current.currentStage,
+    action: "show_selection",
+    question: "已达到本阶段问答上限，请选择最接近的判断、手动填写或跳过。",
+    conclusion: null,
+    resultPatch: {},
+    options,
+    finalSummary: null,
+  });
+}
+
+export function createFallbackPersonaConclusionResponse(
+  flow: PersonaFlowState,
+  requestId: string,
+  userMessage: string,
+  resultPatch: PersonaStageData = {},
+): PersonaAgentTurnResponse {
+  const current = personaFlowStateSchema.parse(flow);
+  const stage = requireStage(current, current.currentStage);
+  const patch = allowedStagePatch(current.currentStage, resultPatch);
+  const formatted = formatPersonaStageConclusion(
+    current.currentStage,
+    mergeStageData(stage.stageData, patch),
+  )?.replace(/\n\n这个判断符合你的实际情况吗？$/u, "");
+  const finalCorrection = `你最后补充的是：${trimSentence(userMessage.trim())}。`;
+  const conclusion = withConfirmation(
+    formatted ? `${formatted}\n\n${finalCorrection}` : finalCorrection,
+  );
+  return personaAgentTurnResponseSchema.parse({
+    requestId,
+    flowId: current.flowId,
+    stateVersion: current.stateVersion,
+    stage: current.currentStage,
+    action: "present_conclusion",
+    question: null,
+    conclusion,
+    resultPatch: patch,
+    options: [],
+    finalSummary: null,
+  });
+}
+
+export function isPersonaConfirmationMessage(message: string): boolean {
+  return /^(?:是|是的|对|对的|没错|正确|符合|可以|确认|同意|继续|下一步)[。！!\s]*$/u.test(
+    message.trim(),
+  );
+}
+
+export function buildPersonaReport(
+  flow: PersonaFlowState,
+  currentStagePatch: PersonaStageData = {},
+): string {
+  const current = personaFlowStateSchema.parse(flow);
+  const data = (stageNumber: number): PersonaStageData => {
+    const stage = current.stages[stageNumber - 1];
+    if (!stage) return {};
+    const base = Object.keys(stage.result).length > 0 ? stage.result : stage.stageData;
+    return stageNumber === current.currentStage ? mergeStageData(base, currentStagePatch) : base;
+  };
+  const first = data(1);
+  const second = data(2);
+  const third = data(3);
+  const fourth = data(4);
+  const fifth = data(5);
+
+  const sections: Array<[string, string]> = [
+    ["你卖什么", reportText(first.product_or_service, first.industry)],
+    ["内容核心定位", reportText(first.content_core_positioning)],
+    ["内容反向定位", reportText(first.content_anti_positioning)],
+    ["卖给谁", joinReportParts(second.priority_audience, second.purchase_relationship)],
+    ["目标客户", joinReportParts(third.priority_target_customer, third.core_need)],
+    ["核心优势", joinReportParts(fourth.core_advantages, fourth.supporting_advantages)],
+    ["核心转化目标", conversionGoalText(fifth.primary_conversion_goal)],
+    ["辅助转化目标", conversionGoalList(fifth.secondary_conversion_goals)],
+  ];
+
+  return [
+    "# 用户画像",
+    ...sections.flatMap(([heading, content]) => [`## ${heading}`, content || "暂未明确"]),
+  ].join("\n\n");
 }
 
 export function ensurePersonaStageConversation(flow: PersonaFlowState): PersonaFlowState {
@@ -393,17 +556,22 @@ function formatPersonaStageConclusion(stage: PersonaStage, data: PersonaStageDat
     );
   }
   if (stage === 4) {
-    const advantages = stageTextList(data.core_advantages);
-    if (!advantages) return null;
-    return withConfirmation(`你最值得强化的优势是${advantages}，内容需要持续突出这一点。`);
+    const coreAdvantages = stageTextList(data.core_advantages);
+    const supportingAdvantages = stageTextList(data.supporting_advantages);
+    if (!coreAdvantages) return null;
+    const supportingClause = supportingAdvantages ? `，辅助优势是${supportingAdvantages}` : "";
+    return withConfirmation(
+      `你最值得强化的核心优势是${coreAdvantages}${supportingClause}，内容需要持续突出这些真实优势。`,
+    );
   }
-  const primary = stageText(data.primary_conversion_goal);
-  const secondary = stageTextList(data.secondary_conversion_goals);
-  const nextAction = stageText(data.next_action);
-  if (!primary || !nextAction) return null;
+  const primary = conversionGoalText(data.primary_conversion_goal);
+  const secondary = conversionGoalList(data.secondary_conversion_goals);
+  const nextAction = normalizeNextAction(data.next_action, data.primary_conversion_goal);
+  if (!primary) return null;
   const secondaryClause = secondary ? `，辅助目标是${secondary}` : "";
+  const actionClause = nextAction ? `内容应优先推动用户${trimSentence(nextAction)}。` : "";
   return withConfirmation(
-    `你的核心转化目标是${trimSentence(primary)}${secondaryClause}。内容应优先推动用户${trimSentence(nextAction)}。`,
+    `你的核心转化目标是${trimSentence(primary)}${secondaryClause}。${actionClause}`,
   );
 }
 
@@ -430,6 +598,59 @@ function stageTextList(value: unknown): string | null {
     return items.length > 0 ? items.map(trimSentence).join("、") : null;
   }
   return stageText(value);
+}
+
+const CONVERSION_GOAL_LABELS: Record<string, string> = {
+  wants_leads: "获得留资",
+  wants_consultations: "获得咨询",
+  wants_store_visits: "促进到店",
+  wants_sales: "促进成交",
+};
+
+function conversionGoalText(value: unknown): string {
+  const text = stageText(value);
+  if (!text) return "";
+  return CONVERSION_GOAL_LABELS[text] ?? text.replace(/\bprimary\s*:\s*/giu, "").trim();
+}
+
+function conversionGoalList(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value
+      .map(conversionGoalText)
+      .filter(Boolean)
+      .filter((item, index, values) => values.indexOf(item) === index)
+      .join("、");
+  }
+  return conversionGoalText(value);
+}
+
+function normalizeNextAction(value: unknown, primaryGoal: unknown): string {
+  const action = stageText(value);
+  if (action && !/[？?]/u.test(action) && !/^(?:请)?确认/u.test(action)) {
+    return action;
+  }
+  const goal = stageText(primaryGoal);
+  if (goal === "wants_store_visits") return "预约并前往门店咨询";
+  if (goal === "wants_consultations") return "主动发起咨询";
+  if (goal === "wants_leads") return "留下联系方式";
+  if (goal === "wants_sales") return "完成购买或成交";
+  return "";
+}
+
+function reportText(...values: unknown[]): string {
+  for (const value of values) {
+    const text = stageTextList(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function joinReportParts(...values: unknown[]): string {
+  return values
+    .map((value) => stageTextList(value))
+    .filter((value): value is string => Boolean(value))
+    .filter((value, index, items) => items.indexOf(value) === index)
+    .join("；");
 }
 
 function trimSentence(value: string): string {
