@@ -72,6 +72,9 @@ def persona_request() -> PersonaAgentTurnRequest:
             "stage": 3,
             "event": "user_message",
             "userMessage": "连锁家具门店采购",
+            "selectedOption": None,
+            "maxQuestionCount": 5,
+            "mustConverge": False,
             "referenceContext": None,
             "stageState": {
                 "stage": 3,

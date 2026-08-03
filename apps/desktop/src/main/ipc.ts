@@ -121,18 +121,30 @@ export function registerIpc(access: WorkspaceAccess): void {
     if (!stored) throw new Error("当前没有正在进行的用户画像流程");
     const flow = ensurePersonaStageConversation(stored);
     workspace.savePersonaFlow(flow);
+    const requestEvent = input.skipStage
+      ? "skip_stage"
+      : input.selectedOption
+        ? "select_option"
+        : "user_message";
     const request = buildPersonaAgentTurnRequest(
       flow,
-      "user_message",
+      requestEvent,
       input.userMessage,
       input.includePersonaReferences ? workspace.personaRagReferenceContext() : null,
+      input.selectedOption,
     );
     const agentTurn = await turnPersonaAgent(request);
     const response = normalizePersonaAgentTurnResponse(flow, agentTurn.response);
-    const next = applyPersonaAgentTurnResponse(flow, response, undefined, {
-      userMessage: agentTurn.userMessage,
-      assistantMessage: agentTurn.assistantMessage,
-    });
+    const next = applyPersonaAgentTurnResponse(
+      flow,
+      response,
+      undefined,
+      {
+        userMessage: agentTurn.userMessage,
+        assistantMessage: agentTurn.assistantMessage,
+      },
+      requestEvent,
+    );
     workspace.savePersonaFlow(next);
     return { flow: next, response };
   });

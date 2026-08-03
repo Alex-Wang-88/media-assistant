@@ -24,6 +24,7 @@ function response(
     question: "请补充当前阶段的信息",
     conclusion: null,
     resultPatch: {},
+    options: [],
     finalSummary: null,
     ...values,
   };
@@ -86,7 +87,7 @@ function flowAtStage(targetStage: number): PersonaFlowState {
 }
 
 describe("local Persona flow", () => {
-  it("starts with five ordered stages and no question-limit policy", () => {
+  it("starts with five ordered stages and a remote-question limit", () => {
     const flow = createPersonaFlowState("2026-07-31T00:00:00.000Z");
 
     expect(flow.currentStage).toBe(1);
@@ -98,8 +99,9 @@ describe("local Persona flow", () => {
       "not_started",
       "not_started",
     ]);
-    expect(flow.stages[0]).not.toHaveProperty("questionCount");
-    expect(flow.stages[0]).not.toHaveProperty("options");
+    expect(flow.stages[0]?.questionCount).toBe(0);
+    expect(flow.stages[0]?.mode).toBe("normal");
+    expect(flow.stages[0]?.options).toEqual([]);
   });
 
   it("keeps a conclusion in the current stage until the user confirms it", () => {
@@ -263,6 +265,98 @@ describe("local Persona flow", () => {
     );
 
     expect(next.stages[stage - 1]?.lastAssistantMessage).toBe(expected);
+  });
+
+  it("counts only remote questions and forces option convergence after five", () => {
+    let flow = createPersonaFlowState();
+    expect(flow.stages[0]?.questionCount).toBe(0);
+
+    for (let count = 1; count <= 5; count += 1) {
+      flow = applyPersonaAgentTurnResponse(
+        flow,
+        response(flow, {
+          question: `第1/5阶段：第 ${count} 个远程追问`,
+          resultPatch: { industry: "家具" },
+        }),
+      );
+    }
+
+    expect(flow.stages[0]?.questionCount).toBe(5);
+    const request = buildPersonaAgentTurnRequest(flow, "user_message", "这是第五次回答");
+    expect(request.maxQuestionCount).toBe(5);
+    expect(request.mustConverge).toBe(true);
+
+    expect(() =>
+      applyPersonaAgentTurnResponse(
+        flow,
+        response(flow, { question: "第1/5阶段：不允许出现的第六个问题" }),
+      ),
+    ).toThrow("必须返回收敛选项");
+  });
+
+  it("stores Agent-generated options and sends a clicked option as structured input", () => {
+    let flow = createPersonaFlowState();
+    for (let count = 1; count <= 5; count += 1) {
+      flow = applyPersonaAgentTurnResponse(
+        flow,
+        response(flow, { question: `第1/5阶段：追问 ${count}` }),
+      );
+    }
+    const options = [
+      { id: "A", label: "以进口家具零售为主要业务" },
+      { id: "B", label: "以进口家具选品服务为主要业务" },
+    ];
+    const selectionFlow = applyPersonaAgentTurnResponse(
+      flow,
+      response(flow, {
+        action: "show_selection",
+        question: "根据前面的信息，请选择更接近实际情况的一项。",
+        options,
+      }),
+    );
+
+    expect(selectionFlow.stages[0]).toMatchObject({
+      status: "selection_required",
+      mode: "selection",
+      questionCount: 5,
+      options,
+    });
+    const request = buildPersonaAgentTurnRequest(
+      selectionFlow,
+      "select_option",
+      `我选择：${options[1]?.label}`,
+      null,
+      options[1],
+    );
+    expect(request).toMatchObject({
+      event: "select_option",
+      selectedOption: options[1],
+      mustConverge: true,
+    });
+  });
+
+  it("marks a locally requested stage skip and continues with partial information", () => {
+    const flow = createPersonaFlowState();
+    const next = applyPersonaAgentTurnResponse(
+      flow,
+      response(flow, {
+        action: "complete_stage",
+        question: null,
+        resultPatch: { industry: "家具" },
+      }),
+      undefined,
+      undefined,
+      "skip_stage",
+    );
+
+    expect(next.currentStage).toBe(2);
+    expect(next.stages[0]).toMatchObject({
+      status: "skipped",
+      result: { industry: "家具" },
+    });
+    expect(buildPersonaAgentTurnRequest(next, "stage_start", null).confirmedData).toEqual({
+      agent_1: { industry: "家具" },
+    });
   });
 
   it("persists the exact user and assistant messages required for the next API turn", () => {

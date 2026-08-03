@@ -47,6 +47,9 @@ def payload(stage: int) -> dict[str, object]:
         "stage": stage,
         "event": "user_message",
         "userMessage": "采购部门使用，老板决定",
+        "selectedOption": None,
+        "maxQuestionCount": 5,
+        "mustConverge": False,
         "referenceContext": None,
         "stageState": {
             "stage": stage,

@@ -82,6 +82,9 @@ describe("Persona RAG plain-text onboarding", () => {
               ? "collecting"
               : "not_started",
         revisionCount: 0,
+        questionCount: 0,
+        mode: "normal",
+        options: [],
         conversationId: null,
         lastAssistantMessage: null,
         agentMessages: [],
@@ -122,6 +125,7 @@ describe("Persona RAG plain-text onboarding", () => {
               question: null,
               conclusion: "我会重点强调进口家具的品质与设计感。这个判断符合实际情况吗？",
               resultPatch: { product_or_service: "进口家具" },
+              options: [],
               finalSummary: null,
             },
           };
@@ -139,6 +143,7 @@ describe("Persona RAG plain-text onboarding", () => {
               question: null,
               conclusion: null,
               resultPatch: { product_or_service: "进口家具" },
+              options: [],
               finalSummary: null,
             },
           };
@@ -155,6 +160,7 @@ describe("Persona RAG plain-text onboarding", () => {
             question: null,
             conclusion: null,
             resultPatch: { primary_conversion_goal: "留下联系方式" },
+            options: [],
             finalSummary: finalReport,
           },
         };

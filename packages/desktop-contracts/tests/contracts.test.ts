@@ -116,6 +116,32 @@ describe("desktop contracts", () => {
     ).toBe(true);
   });
 
+  it("requires two to four structured options for selection convergence", () => {
+    const response = {
+      requestId: crypto.randomUUID(),
+      flowId: crypto.randomUUID(),
+      stateVersion: 0,
+      stage: 1,
+      action: "show_selection",
+      question: "请选择更符合实际情况的一项。",
+      conclusion: null,
+      resultPatch: {},
+      options: [{ id: "A", label: "选项 A" }],
+      finalSummary: null,
+    };
+
+    expect(personaAgentTurnResponseSchema.safeParse(response).success).toBe(false);
+    expect(
+      personaAgentTurnResponseSchema.safeParse({
+        ...response,
+        options: [
+          { id: "A", label: "选项 A" },
+          { id: "B", label: "选项 B" },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
   it("rejects publishing without explicit approval", () => {
     expect(
       publishStartInputSchema.safeParse({

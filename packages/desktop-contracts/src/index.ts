@@ -187,6 +187,13 @@ export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
 
 export const personaStageSchema = z.number().int().min(1).max(5);
 export type PersonaStage = z.infer<typeof personaStageSchema>;
+export const PERSONA_STAGE_QUESTION_LIMIT = 5;
+
+export const personaStageOptionSchema = z.object({
+  id: z.string().trim().min(1).max(40),
+  label: z.string().trim().min(1).max(200),
+});
+export type PersonaStageOption = z.infer<typeof personaStageOptionSchema>;
 
 export const PERSONA_STAGE_WELCOMES: Record<number, string> = {
   1: "第1/5阶段：请告诉我，你目前主要经营什么业务？",
@@ -211,7 +218,9 @@ export const personaStageStatusSchema = z.enum([
   "not_started",
   "collecting",
   "waiting_confirmation",
+  "selection_required",
   "confirmed",
+  "skipped",
   "needs_revalidation",
 ]);
 export type PersonaStageStatus = z.infer<typeof personaStageStatusSchema>;
@@ -229,6 +238,9 @@ export const personaStageStateSchema = z.object({
   stage: personaStageSchema,
   status: personaStageStatusSchema,
   revisionCount: z.number().int().nonnegative(),
+  questionCount: z.number().int().nonnegative().default(0),
+  mode: z.enum(["normal", "selection"]).default("normal"),
+  options: z.array(personaStageOptionSchema).max(4).default([]),
   conversationId: z.string().min(1).max(200).nullable(),
   lastAssistantMessage: z.string().max(2_000).nullable().default(null),
   agentMessages: z.array(chatMessageSchema).max(100).default([]),
@@ -259,11 +271,14 @@ export const personaAgentEventSchema = z.enum([
   "user_message",
   "confirm_stage",
   "modify_stage",
+  "select_option",
+  "skip_stage",
 ]);
 export type PersonaAgentEvent = z.infer<typeof personaAgentEventSchema>;
 
 export const personaAgentActionSchema = z.enum([
   "ask_question",
+  "show_selection",
   "present_conclusion",
   "complete_stage",
   "generate_final_summary",
@@ -277,6 +292,9 @@ export const personaAgentTurnRequestSchema = z.object({
   stage: personaStageSchema,
   event: personaAgentEventSchema,
   userMessage: z.string().trim().min(1).max(20_000).nullable(),
+  selectedOption: personaStageOptionSchema.nullable().default(null),
+  maxQuestionCount: z.literal(PERSONA_STAGE_QUESTION_LIMIT),
+  mustConverge: z.boolean(),
   referenceContext: z.string().max(50_000).nullable(),
   stageState: personaStageStateSchema,
   confirmedData: z.record(z.string(), personaStageDataSchema),
@@ -293,11 +311,22 @@ export const personaAgentTurnResponseSchema = z
     question: z.string().trim().min(1).max(300).nullable(),
     conclusion: z.string().trim().min(1).max(500).nullable(),
     resultPatch: personaStageDataSchema,
+    options: z.array(personaStageOptionSchema).max(4).default([]),
     finalSummary: z.string().trim().min(1).max(20_000).nullable(),
   })
   .superRefine((response, context) => {
     if (response.action === "ask_question" && !response.question) {
       context.addIssue({ code: "custom", path: ["question"], message: "提问动作必须包含问题" });
+    }
+    if (
+      response.action === "show_selection" &&
+      (!response.question || response.options.length < 2)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["options"],
+        message: "选项收敛必须包含说明和二到四个选项",
+      });
     }
     if (response.action === "present_conclusion" && !response.conclusion) {
       context.addIssue({
@@ -323,10 +352,16 @@ export const personaAgentApiTurnResultSchema = z.object({
 });
 export type PersonaAgentApiTurnResult = z.infer<typeof personaAgentApiTurnResultSchema>;
 
-export const personaFlowTurnInputSchema = z.object({
-  userMessage: z.string().trim().min(1).max(20_000),
-  includePersonaReferences: z.boolean().default(false),
-});
+export const personaFlowTurnInputSchema = z
+  .object({
+    userMessage: z.string().trim().min(1).max(20_000),
+    includePersonaReferences: z.boolean().default(false),
+    selectedOption: personaStageOptionSchema.nullable().default(null),
+    skipStage: z.boolean().default(false),
+  })
+  .refine((input) => !(input.selectedOption && input.skipStage), {
+    message: "选择选项和跳过阶段不能同时发生",
+  });
 export type PersonaFlowTurnInput = z.infer<typeof personaFlowTurnInputSchema>;
 
 export const personaFlowTurnResultSchema = z.object({

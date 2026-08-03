@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import {
+  PERSONA_STAGE_QUESTION_LIMIT,
   type PersonaAgentEvent,
   type PersonaAgentTurnRequest,
   type PersonaAgentTurnResponse,
   type PersonaFlowState,
   type PersonaStage,
   type PersonaStageData,
+  type PersonaStageOption,
   type PersonaStageState,
   personaAgentTurnResponseSchema,
   personaFlowStateSchema,
@@ -25,6 +27,9 @@ export function createPersonaFlowState(timestamp = new Date().toISOString()): Pe
       stage: index + 1,
       status: index === 0 ? "collecting" : "not_started",
       revisionCount: 0,
+      questionCount: 0,
+      mode: "normal",
+      options: [],
       conversationId: null,
       lastAssistantMessage: index === 0 ? personaStageWelcome(1) : null,
       agentMessages: [],
@@ -41,6 +46,7 @@ export function buildPersonaAgentTurnRequest(
   event: PersonaAgentEvent,
   userMessage: string | null,
   referenceContext: string | null = null,
+  selectedOption: PersonaStageOption | null = null,
 ): PersonaAgentTurnRequest {
   const validated = personaFlowStateSchema.parse(flow);
   if (validated.flowCompleted) throw new Error("本轮画像流程已经完成");
@@ -52,11 +58,15 @@ export function buildPersonaAgentTurnRequest(
     stage: validated.currentStage,
     event,
     userMessage,
+    selectedOption,
+    maxQuestionCount: PERSONA_STAGE_QUESTION_LIMIT,
+    mustConverge:
+      stageState.questionCount >= PERSONA_STAGE_QUESTION_LIMIT || stageState.mode === "selection",
     referenceContext,
     stageState,
     confirmedData: Object.fromEntries(
       validated.stages
-        .filter((stage) => stage.status === "confirmed")
+        .filter((stage) => stage.status === "confirmed" || stage.status === "skipped")
         .map((stage) => [`agent_${stage.stage}`, stage.result]),
     ),
   };
@@ -67,6 +77,7 @@ export function applyPersonaAgentTurnResponse(
   rawResponse: PersonaAgentTurnResponse,
   timestamp = new Date().toISOString(),
   conversationTurn?: { userMessage: string; assistantMessage: string },
+  requestEvent: PersonaAgentEvent = "user_message",
 ): PersonaFlowState {
   const current = personaFlowStateSchema.parse(flow);
   const response = normalizePersonaAgentTurnResponse(current, rawResponse);
@@ -94,15 +105,31 @@ export function applyPersonaAgentTurnResponse(
   let finalSummary = current.finalSummary;
 
   if (response.action === "ask_question") {
+    if (stage.questionCount >= PERSONA_STAGE_QUESTION_LIMIT || stage.mode === "selection") {
+      throw new Error("当前阶段已达到提问上限，Agent 必须返回收敛选项");
+    }
     stages[stageIndex] = {
       ...stages[stageIndex],
       status: "collecting",
+      questionCount: stage.questionCount + 1,
+      mode: "normal",
+      options: [],
+      lastAssistantMessage: response.question,
+    };
+  } else if (response.action === "show_selection") {
+    stages[stageIndex] = {
+      ...stages[stageIndex],
+      status: "selection_required",
+      mode: "selection",
+      options: response.options,
       lastAssistantMessage: response.question,
     };
   } else if (response.action === "present_conclusion") {
     stages[stageIndex] = {
       ...stages[stageIndex],
       status: "waiting_confirmation",
+      mode: "normal",
+      options: [],
       lastAssistantMessage: response.conclusion,
     };
   } else if (response.action === "complete_stage") {
@@ -111,7 +138,9 @@ export function applyPersonaAgentTurnResponse(
     }
     stages[stageIndex] = {
       ...stages[stageIndex],
-      status: "confirmed",
+      status: requestEvent === "skip_stage" ? "skipped" : "confirmed",
+      mode: "normal",
+      options: [],
       lastAssistantMessage: null,
       result: stageData,
     };
@@ -122,6 +151,8 @@ export function applyPersonaAgentTurnResponse(
       stages[nextIndex] = {
         ...next,
         status: "collecting",
+        mode: "normal",
+        options: [],
         lastAssistantMessage: personaStageWelcome(currentStage),
       };
     }
@@ -131,7 +162,9 @@ export function applyPersonaAgentTurnResponse(
     }
     stages[stageIndex] = {
       ...stages[stageIndex],
-      status: "confirmed",
+      status: requestEvent === "skip_stage" ? "skipped" : "confirmed",
+      mode: "normal",
+      options: [],
       lastAssistantMessage: null,
       result: stageData,
     };
@@ -158,6 +191,10 @@ export function normalizePersonaAgentTurnResponse(
   const response = personaAgentTurnResponseSchema.parse(rawResponse);
   const stage = requireStage(current, response.stage);
   const resultPatch = allowedStagePatch(response.stage, response.resultPatch);
+  const options =
+    response.action === "show_selection"
+      ? response.options.filter((option) => option.id !== "__skip__")
+      : [];
   const crossedStageBoundary = hasOutOfStageFields(response.stage, response.resultPatch);
   const repeatedQuestion =
     response.action === "ask_question" &&
@@ -171,6 +208,7 @@ export function normalizePersonaAgentTurnResponse(
       question: personaStageRecoveryQuestion(response.stage),
       conclusion: null,
       resultPatch,
+      options: [],
       finalSummary: null,
     });
   }
@@ -184,6 +222,7 @@ export function normalizePersonaAgentTurnResponse(
         ...response,
         conclusion,
         resultPatch,
+        options: [],
       });
     }
   }
@@ -197,6 +236,7 @@ export function normalizePersonaAgentTurnResponse(
       question: personaStageRecoveryQuestion(response.stage),
       conclusion: null,
       resultPatch,
+      options: [],
       finalSummary: null,
     });
   }
@@ -208,9 +248,10 @@ export function normalizePersonaAgentTurnResponse(
       ...response,
       conclusion: `${response.conclusion?.trim()} 这个判断符合你的实际情况吗？`,
       resultPatch,
+      options: [],
     });
   }
-  return personaAgentTurnResponseSchema.parse({ ...response, resultPatch });
+  return personaAgentTurnResponseSchema.parse({ ...response, resultPatch, options });
 }
 
 export function ensurePersonaStageConversation(flow: PersonaFlowState): PersonaFlowState {

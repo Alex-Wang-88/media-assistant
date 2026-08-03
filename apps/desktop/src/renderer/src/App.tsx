@@ -5,6 +5,7 @@ import type {
   PersonaFlowState,
   PersonaRagConfirmInput,
   PersonaRagImportResult,
+  PersonaStageOption,
   Project,
 } from "@yoom/desktop-contracts";
 import { personaStageWelcome } from "@yoom/desktop-contracts";
@@ -290,6 +291,8 @@ export function App() {
   );
   const personaUploadPending =
     importPersonaRagFiles.isPending || importDroppedPersonaRagFiles.isPending;
+  const activePersonaStage = personaFlow?.stages[personaFlow.currentStage - 1] ?? null;
+  const personaSelectionRequired = activePersonaStage?.status === "selection_required";
   const handlePersonaDragOver = (event: ReactDragEvent<HTMLElement>) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -307,6 +310,8 @@ export function App() {
     prompt: string,
     showUserMessage = true,
     includeReferences = false,
+    selectedOption: PersonaStageOption | null = null,
+    skipStage = false,
   ) => {
     const normalizedPrompt = prompt.trim();
     if (!normalizedPrompt || isStreaming) return;
@@ -330,10 +335,14 @@ export function App() {
       const result = await window.desktop.personaFlow.turn({
         userMessage: normalizedPrompt,
         includePersonaReferences: includeReferences,
+        selectedOption,
+        skipStage,
       });
       setPersonaFlow(result.flow);
       let assistantContent = "";
       if (result.response.action === "ask_question") {
+        assistantContent = result.response.question ?? "";
+      } else if (result.response.action === "show_selection") {
         assistantContent = result.response.question ?? "";
       } else if (result.response.action === "present_conclusion") {
         assistantContent = result.response.conclusion ?? "";
@@ -943,6 +952,40 @@ export function App() {
                     <ChatBubble key={entry.id} message={entry} />
                   ))}
                 </div>
+                {personaSelectionRequired && activePersonaStage ? (
+                  <fieldset className="persona-convergence-options">
+                    <legend>请选择更符合实际情况的一项</legend>
+                    <div>
+                      {activePersonaStage.options.map((option) => (
+                        <button
+                          type="button"
+                          key={option.id}
+                          disabled={isStreaming}
+                          onClick={() =>
+                            void sendPersonaAgentMessage(
+                              `我选择：${option.label}`,
+                              true,
+                              false,
+                              option,
+                            )
+                          }
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="skip"
+                        disabled={isStreaming}
+                        onClick={() =>
+                          void sendPersonaAgentMessage("暂时跳过本阶段", true, false, null, true)
+                        }
+                      >
+                        暂时跳过
+                      </button>
+                    </div>
+                  </fieldset>
+                ) : null}
                 {personaReportDraft ? (
                   <article className="persona-draft-card">
                     <header>
@@ -1077,7 +1120,7 @@ export function App() {
           </div>
         </div>
         {!personaDocumentOpen &&
-        ((personaSetupOpen && !personaReportDraft) ||
+        ((personaSetupOpen && !personaReportDraft && !personaSelectionRequired) ||
           (!personaSetupOpen && conversationMessages.length > 0)) ? (
           <div className="composer-wrap">
             {personaSetupOpen ? (

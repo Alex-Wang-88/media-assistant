@@ -119,6 +119,13 @@ type PersonaStage = Literal[1, 2, 3, 4, 5]
 type PersonaStageValue = str | bool | list[str] | None
 
 
+class PersonaStageOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=200)
+
+
 class PersonaStageState(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -127,10 +134,15 @@ class PersonaStageState(BaseModel):
         "not_started",
         "collecting",
         "waiting_confirmation",
+        "selection_required",
         "confirmed",
+        "skipped",
         "needs_revalidation",
     ]
     revision_count: int = Field(ge=0, alias="revisionCount")
+    question_count: int = Field(default=0, ge=0, alias="questionCount")
+    mode: Literal["normal", "selection"] = "normal"
+    options: list[PersonaStageOption] = Field(default_factory=list, max_length=4)
     conversation_id: str | None = Field(default=None, alias="conversationId", max_length=200)
     last_assistant_message: str | None = Field(
         default=None,
@@ -153,8 +165,18 @@ class PersonaAgentTurnRequest(BaseModel):
     flow_id: UUID = Field(alias="flowId")
     state_version: int = Field(ge=0, alias="stateVersion")
     stage: PersonaStage
-    event: Literal["stage_start", "user_message", "confirm_stage", "modify_stage"]
+    event: Literal[
+        "stage_start",
+        "user_message",
+        "confirm_stage",
+        "modify_stage",
+        "select_option",
+        "skip_stage",
+    ]
     user_message: str | None = Field(default=None, alias="userMessage", max_length=20_000)
+    selected_option: PersonaStageOption | None = Field(default=None, alias="selectedOption")
+    max_question_count: Literal[5] = Field(alias="maxQuestionCount")
+    must_converge: bool = Field(alias="mustConverge")
     reference_context: str | None = Field(
         default=None,
         alias="referenceContext",
@@ -173,6 +195,7 @@ class PersonaAgentTurnResponse(BaseModel):
     stage: PersonaStage
     action: Literal[
         "ask_question",
+        "show_selection",
         "present_conclusion",
         "complete_stage",
         "generate_final_summary",
@@ -180,6 +203,7 @@ class PersonaAgentTurnResponse(BaseModel):
     question: str | None = Field(default=None, min_length=1, max_length=300)
     conclusion: str | None = Field(default=None, min_length=1, max_length=500)
     result_patch: dict[str, PersonaStageValue] = Field(alias="resultPatch")
+    options: list[PersonaStageOption] = Field(default_factory=list, max_length=4)
     final_summary: str | None = Field(
         default=None,
         alias="finalSummary",
@@ -191,6 +215,8 @@ class PersonaAgentTurnResponse(BaseModel):
     def require_action_content(self) -> "PersonaAgentTurnResponse":
         if self.action == "ask_question" and self.question is None:
             raise ValueError("提问动作必须包含问题")
+        if self.action == "show_selection" and (self.question is None or len(self.options) < 2):
+            raise ValueError("选项收敛必须包含说明和二到四个选项")
         if self.action == "present_conclusion" and self.conclusion is None:
             raise ValueError("展示结论必须包含结论文本")
         if self.action == "generate_final_summary" and self.final_summary is None:
