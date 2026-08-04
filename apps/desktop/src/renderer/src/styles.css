@@ -1238,6 +1238,28 @@ svg {
   border-color: var(--composer-focus-border);
 }
 
+.product-question-input {
+  width: 100%;
+  min-height: 76px;
+  resize: vertical;
+  padding: 10px 11px;
+  color: var(--text);
+  background: var(--composer-bg);
+  border: 1px solid var(--composer-border);
+  border-radius: 8px;
+  outline: none;
+  font: inherit;
+  line-height: 1.5;
+}
+
+.product-question-input:focus {
+  border-color: var(--composer-focus-border);
+}
+
+.persona-question-options.multiple button > span {
+  border-radius: 4px;
+}
+
 .persona-question-card > footer {
   display: flex;
   justify-content: flex-end;

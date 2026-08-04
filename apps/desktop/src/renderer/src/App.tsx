@@ -6,6 +6,8 @@ import type {
   PersonaRagConfirmInput,
   PersonaRagImportResult,
   PersonaStageOption,
+  ProductPromotionAgentResponse,
+  ProductPromotionAnswer,
   Project,
 } from "@yoom/desktop-contracts";
 import { personaStageWelcome } from "@yoom/desktop-contracts";
@@ -109,8 +111,13 @@ export function App() {
   const [personaDropActive, setPersonaDropActive] = useState(false);
   const [personaDeleteConfirm, setPersonaDeleteConfirm] = useState(false);
   const [personaDeleteError, setPersonaDeleteError] = useState<string | null>(null);
-  const [contentTypePickerOpen, setContentTypePickerOpen] = useState(false);
   const [contentAgentType, setContentAgentType] = useState<ContentAgentType | null>(null);
+  const contentAgentSessionId = useRef<string | null>(null);
+  const [productAgentMessages, setProductAgentMessages] = useState<ChatMessage[]>([]);
+  const [productAgentResponse, setProductAgentResponse] =
+    useState<ProductPromotionAgentResponse | null>(null);
+  const [productSelectedOptionIds, setProductSelectedOptionIds] = useState<string[]>([]);
+  const [productCustomInput, setProductCustomInput] = useState("");
   const [publishCenterOpen, setPublishCenterOpen] = useState(false);
   const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed | null>(null);
   const skipNextProjectReset = useRef(false);
@@ -518,8 +525,12 @@ export function App() {
   };
 
   const selectContentAgent = (type: ContentAgentType) => {
+    contentAgentSessionId.current = crypto.randomUUID();
+    setProductAgentMessages([]);
+    setProductAgentResponse(null);
+    setProductSelectedOptionIds([]);
+    setProductCustomInput("");
     setContentAgentType(type);
-    setContentTypePickerOpen(false);
     setConversationMessages([personaSetupMessage("assistant", CONTENT_AGENT_WELCOME[type], true)]);
     setMessage("");
     requestAnimationFrame(() => messageInputRef.current?.focus());
@@ -527,8 +538,12 @@ export function App() {
 
   const returnToContentTypePicker = () => {
     cancelLatestMessage();
+    contentAgentSessionId.current = null;
+    setProductAgentMessages([]);
+    setProductAgentResponse(null);
+    setProductSelectedOptionIds([]);
+    setProductCustomInput("");
     setContentAgentType(null);
-    setContentTypePickerOpen(true);
     setConversationMessages([]);
     setMessage("");
     setAgentRequestFailed(false);
@@ -611,12 +626,138 @@ export function App() {
       return;
     }
     setConversationMessages([]);
-    setContentTypePickerOpen(false);
     setContentAgentType(null);
+    contentAgentSessionId.current = null;
+    setProductAgentMessages([]);
+    setProductAgentResponse(null);
+    setProductSelectedOptionIds([]);
+    setProductCustomInput("");
     setMessage("");
     setIsStreaming(false);
     cancelLatestMessage();
   }, [ui.selectedProjectId]);
+
+  const sendProductPromotionAnswer = async (
+    answer: ProductPromotionAnswer,
+    visibleAnswer: string,
+  ) => {
+    const sessionId = contentAgentSessionId.current;
+    if (!sessionId || isStreaming) return;
+    const assistantId = crypto.randomUUID();
+    const previousResponse = productAgentResponse;
+    const userEntry = personaSetupMessage("user", visibleAnswer);
+    const assistantEntry: ConversationMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      status: "streaming",
+      tools: [],
+    };
+    requestLatestMessage();
+    setConversationMessages((current) => [...current, userEntry, assistantEntry]);
+    setProductAgentResponse(null);
+    setMessage("");
+    setIsStreaming(true);
+    try {
+      if (!ui.selectedProjectId) {
+        const project = await window.desktop.tasks.create({
+          name: visibleAnswer.split(/\r?\n/, 1)[0]?.slice(0, 40) || "产品推广",
+        });
+        skipNextProjectReset.current = true;
+        ui.selectProject(project.id);
+        await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      }
+      const result = await window.desktop.productPromotion.turn({
+        requestId: crypto.randomUUID(),
+        sessionId,
+        messages: productAgentMessages,
+        answer,
+      });
+      setProductAgentMessages((current) => [
+        ...current,
+        { role: "user", content: result.userMessage },
+        { role: "assistant", content: result.assistantMessage },
+      ]);
+      setProductAgentResponse(result.response);
+      setProductSelectedOptionIds([]);
+      setProductCustomInput("");
+      const assistantContent =
+        result.response.status === "completed"
+          ? (result.response.finalContent ?? "文案已生成。")
+          : (result.response.question ?? "请继续补充产品信息。");
+      setConversationMessages((current) =>
+        current.map((entry) =>
+          entry.id === assistantId
+            ? { ...entry, content: assistantContent, status: "complete" }
+            : entry,
+        ),
+      );
+      setAgentRequestFailed(false);
+      requestLatestMessage(true);
+    } catch (error) {
+      setProductAgentResponse(previousResponse);
+      setAgentRequestFailed(true);
+      const errorMessage = readableError(error);
+      setConversationMessages((current) =>
+        current.map((entry) =>
+          entry.id === assistantId ? { ...entry, status: "error", error: errorMessage } : entry,
+        ),
+      );
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  const toggleProductOption = (optionId: string) => {
+    if (!productAgentResponse || productAgentResponse.selectionMode === "text") return;
+    setProductSelectedOptionIds((current) => {
+      if (productAgentResponse.selectionMode === "single") {
+        return current.includes(optionId) ? [] : [optionId];
+      }
+      const maxSelections =
+        productAgentResponse.maxSelections ?? productAgentResponse.options.length;
+      if (!current.includes(optionId) && current.length >= maxSelections) {
+        return current;
+      }
+      return current.includes(optionId)
+        ? current.filter((id) => id !== optionId)
+        : [...current, optionId];
+    });
+  };
+
+  const submitProductAnswer = () => {
+    if (!productAgentResponse || productAgentResponse.status !== "questioning") return;
+    const selectedOptions = productSelectedOptionIds
+      .map(
+        (optionId) => productAgentResponse.options.find((option) => option.id === optionId)?.label,
+      )
+      .filter((label): label is string => Boolean(label));
+    const customInput = productCustomInput.trim();
+    if (selectedOptions.length === 0 && !customInput) return;
+    const displayedSelections = productAgentResponse.rankSelections
+      ? selectedOptions.map((label, index) => `${index + 1}. ${label}`)
+      : selectedOptions;
+    const visibleAnswer = [...displayedSelections, ...(customInput ? [customInput] : [])].join(
+      "；",
+    );
+    void sendProductPromotionAnswer(
+      {
+        selectedOptions,
+        customInput,
+        skipped: false,
+        ranked: productAgentResponse.rankSelections,
+      },
+      visibleAnswer,
+    );
+  };
+
+  const skipProductQuestion = () => {
+    if (!productAgentResponse?.allowSkip) return;
+    void sendProductPromotionAnswer(
+      { selectedOptions: [], customInput: "", skipped: true, ranked: false },
+      "跳过当前问题",
+    );
+  };
 
   const sendMessage = async () => {
     if (personaSetupOpen) {
@@ -626,6 +767,14 @@ export function App() {
     const prompt = message.trim();
     let projectId = ui.selectedProjectId;
     if (!prompt || isStreaming) return;
+
+    if (contentAgentType === "product_promotion") {
+      await sendProductPromotionAnswer(
+        { selectedOptions: [], customInput: prompt, skipped: false, ranked: false },
+        prompt,
+      );
+      return;
+    }
 
     const requestId = crypto.randomUUID();
     const assistantId = crypto.randomUUID();
@@ -1230,9 +1379,7 @@ export function App() {
                   </article>
                 ) : null}
               </div>
-            ) : conversationMessages.length === 0 &&
-              personaRag.data?.ready &&
-              contentTypePickerOpen ? (
+            ) : conversationMessages.length === 0 && personaRag.data?.ready ? (
               <div className="welcome-card content-type-picker">
                 <span className="welcome-mark">
                   <Icon name="spark" />
@@ -1249,24 +1396,6 @@ export function App() {
                     <span>围绕品牌、企业动态或公司主题生成内容</span>
                   </button>
                 </div>
-              </div>
-            ) : conversationMessages.length === 0 && personaRag.data?.ready ? (
-              <div className="welcome-card">
-                <span className="welcome-mark">
-                  <Icon name="spark" />
-                </span>
-                <h1>开始创建多平台推文</h1>
-                <p>
-                  描述本次要推广的产品、服务或公司主题，Agent
-                  会继续询问必要信息，并生成适合不同平台的文案。
-                </p>
-                <button
-                  type="button"
-                  className="primary welcome-primary"
-                  onClick={() => setContentTypePickerOpen(true)}
-                >
-                  开始创建多平台推文
-                </button>
               </div>
             ) : conversationMessages.length === 0 ? (
               <div className="welcome-card persona-rag-empty">
@@ -1312,6 +1441,91 @@ export function App() {
                 {conversationMessages.map((entry) => (
                   <ChatBubble key={entry.id} message={entry} />
                 ))}
+                {contentAgentType === "product_promotion" &&
+                productAgentResponse?.status === "questioning" ? (
+                  <section className="persona-question-card product-question-card">
+                    <header>
+                      <strong>
+                        {productAgentResponse.selectionMode === "multiple"
+                          ? productAgentResponse.rankSelections
+                            ? `请按优先级选择，最多 ${productAgentResponse.maxSelections ?? productAgentResponse.options.length} 项，也可以补充文字`
+                            : productAgentResponse.maxSelections
+                              ? `最多选择 ${productAgentResponse.maxSelections} 项，也可以补充文字`
+                              : "可多选，也可以补充文字"
+                          : productAgentResponse.selectionMode === "single"
+                            ? "请选择一项，也可以补充文字"
+                            : "请输入你的回答"}
+                      </strong>
+                    </header>
+                    {productAgentResponse.selectionMode !== "text" ? (
+                      <div
+                        className={`persona-question-options ${productAgentResponse.selectionMode}`}
+                      >
+                        {productAgentResponse.options.map((option) => {
+                          const priority = productSelectedOptionIds.indexOf(option.id);
+                          const selected = priority >= 0;
+                          const maxSelections =
+                            productAgentResponse.selectionMode === "single"
+                              ? 1
+                              : (productAgentResponse.maxSelections ??
+                                productAgentResponse.options.length);
+                          const selectionLimitReached =
+                            !selected && productSelectedOptionIds.length >= maxSelections;
+                          return (
+                            <button
+                              type="button"
+                              key={option.id}
+                              className={selected ? "selected" : ""}
+                              aria-pressed={selected}
+                              disabled={isStreaming || selectionLimitReached}
+                              onClick={() => toggleProductOption(option.id)}
+                            >
+                              <span aria-hidden="true">
+                                {selected
+                                  ? productAgentResponse.rankSelections
+                                    ? priority + 1
+                                    : "✓"
+                                  : ""}
+                              </span>
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {productAgentResponse.allowCustomInput ? (
+                      <textarea
+                        className="product-question-input"
+                        value={productCustomInput}
+                        disabled={isStreaming}
+                        placeholder={
+                          productAgentResponse.selectionMode === "text"
+                            ? "请输入具体信息…"
+                            : "需要时可继续补充…"
+                        }
+                        onChange={(event) => setProductCustomInput(event.target.value)}
+                      />
+                    ) : null}
+                    <footer>
+                      {productAgentResponse.allowSkip ? (
+                        <button type="button" disabled={isStreaming} onClick={skipProductQuestion}>
+                          跳过
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={
+                          isStreaming ||
+                          (productSelectedOptionIds.length === 0 && !productCustomInput.trim())
+                        }
+                        onClick={submitProductAnswer}
+                      >
+                        提交回答
+                      </button>
+                    </footer>
+                  </section>
+                ) : null}
               </div>
             )}
           </div>
@@ -1332,7 +1546,12 @@ export function App() {
           !personaResumeChoiceOpen &&
           !personaReportDraft &&
           !personaConvergenceActive) ||
-          (!personaSetupOpen && conversationMessages.length > 0)) ? (
+          (!personaSetupOpen &&
+            conversationMessages.length > 0 &&
+            !(
+              contentAgentType === "product_promotion" &&
+              (productAgentResponse || isStreaming)
+            ))) ? (
           <div className="composer-wrap">
             {personaSetupOpen ? (
               <div className="persona-setup-composer-label">

@@ -14,6 +14,7 @@ import {
   listOutputsInputSchema,
   persistedPublishDraftStateSchema,
   personaFlowTurnInputSchema,
+  productPromotionTurnInputSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
   personaRagSaveDocumentInputSchema,
@@ -38,7 +39,12 @@ import {
   listBilibiliAccounts,
   openAndFillBilibili,
 } from "./bilibili-publisher";
-import { getAgentStatus, streamChat, turnPersonaAgent } from "./chat-client";
+import {
+  getAgentStatus,
+  streamChat,
+  turnPersonaAgent,
+  turnProductPromotionAgent,
+} from "./chat-client";
 import {
   applyPersonaAgentTurnResponse,
   buildPersonaAgentTurnRequest,
@@ -226,6 +232,12 @@ export function registerIpc(access: WorkspaceAccess): void {
     }
     workspace.savePersonaFlow(next);
     return { flow: next, response };
+  });
+  ipcMain.handle(ipcChannels.productPromotionTurn, async (_event, raw) => {
+    const input = productPromotionTurnInputSchema.parse(raw);
+    const referenceContext =
+      input.messages.length === 0 ? requireWorkspace(access).personaRagReferenceContext() : null;
+    return turnProductPromotionAgent({ ...input, referenceContext });
   });
   ipcMain.handle(ipcChannels.filesListOutputs, (_event, raw) => {
     const input = listOutputsInputSchema.parse(raw);

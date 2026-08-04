@@ -93,6 +93,7 @@ def test_chat_reports_missing_provider_before_streaming() -> None:
         )
     assert response.status_code == 503
     assert "YUNBLOOM_SHARE_URL" in response.json()["detail"]
+    assert "PERSONA_AGENT_API_KEY" in response.json()["detail"]
 
 
 def test_persona_mode_uses_the_dedicated_provider() -> None:
@@ -138,4 +139,4 @@ def test_persona_mode_reports_its_own_missing_configuration() -> None:
         )
 
     assert response.status_code == 503
-    assert "PERSONA_AGENT_SHARE_URL" in response.json()["detail"]
+    assert "五阶段 Persona Agent" in response.json()["detail"]

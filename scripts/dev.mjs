@@ -54,6 +54,17 @@ function start(command, args, options = {}) {
   return child;
 }
 
+function pnpmInvocation() {
+  const npmExecPath = environment.npm_execpath;
+  if (npmExecPath && existsSync(npmExecPath)) {
+    return { command: process.execPath, args: [npmExecPath] };
+  }
+  return {
+    command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+    args: [],
+  };
+}
+
 async function waitForApi(apiProcess) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     if (await apiIsReady()) return;
@@ -92,23 +103,8 @@ try {
   }
   await waitForApi(apiProcess);
 
-  const corepackScript = join(
-    dirname(process.execPath),
-    "node_modules",
-    "corepack",
-    "dist",
-    "corepack.js",
-  );
-  if (!existsSync(corepackScript)) {
-    throw new Error(`找不到 Corepack 启动脚本：${corepackScript}`);
-  }
-  const desktop = start(process.execPath, [
-    corepackScript,
-    "pnpm",
-    "--filter",
-    "@yoom/desktop",
-    "dev",
-  ]);
+  const pnpm = pnpmInvocation();
+  const desktop = start(pnpm.command, [...pnpm.args, "--filter", "@yoom/desktop", "dev"]);
   desktop.once("exit", (code) => stop(code ?? 0));
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);

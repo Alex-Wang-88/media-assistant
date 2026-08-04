@@ -16,6 +16,8 @@ import type {
   PersonaRagDroppedFile,
   PersonaRagImportResult,
   PersonaRagStatus,
+  ProductPromotionAgentApiTurnResult,
+  ProductPromotionTurnInput,
   Project,
   PublishAutomationResult,
   PublishDraftState,
@@ -42,6 +44,7 @@ const channels = {
   personaFlowLoad: "persona-flow:load",
   personaFlowStart: "persona-flow:start",
   personaFlowTurn: "persona-flow:turn",
+  productPromotionTurn: "product-promotion:turn",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",
@@ -159,6 +162,12 @@ const api: DesktopApi = {
       ipcRenderer
         .invoke(channels.personaFlowTurn, input)
         .then((value: unknown) => expectObject<PersonaFlowTurnResult>(value)),
+  },
+  productPromotion: {
+    turn: (input: ProductPromotionTurnInput) =>
+      ipcRenderer
+        .invoke(channels.productPromotionTurn, input)
+        .then((value: unknown) => expectObject<ProductPromotionAgentApiTurnResult>(value)),
   },
   files: {
     listOutputs: (projectId) =>

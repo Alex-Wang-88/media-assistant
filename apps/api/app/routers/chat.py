@@ -16,13 +16,13 @@ def chat_provider(request: Request, mode: str = "chat") -> ChatProvider:
     provider = getattr(request.app.state, state_name, None)
     if provider is None:
         variables = (
-            "PERSONA_AGENT_SHARE_URL 和 PERSONA_AGENT_API_KEY"
+            "画像对话已迁移到五阶段 Persona Agent"
             if mode == "persona_setup"
-            else "YUNBLOOM_SHARE_URL 和 YUNBLOOM_API_KEY"
+            else "YUNBLOOM_SHARE_URL 和 PERSONA_AGENT_API_KEY"
         )
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            f"AI API 未配置，请设置 {variables}",
+            f"AI API 未配置：{variables}",
         )
     return provider
 

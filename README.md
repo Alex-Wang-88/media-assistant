@@ -84,15 +84,11 @@ uv run --directory apps/api uvicorn app.main:app --reload
 
 ```powershell
 $env:YUNBLOOM_SHARE_URL="https://api.yunbloom.cn/v2/chat/completions/share?shareId=..."
-$env:YUNBLOOM_API_KEY="..."
-```
-
-Persona 构建使用独立的积墨 Agent 配置，Key 不得进入 Renderer 或提交到仓库：
-
-```powershell
-$env:PERSONA_AGENT_SHARE_URL="https://jimoai-bot-api.xiaohuodui.cn/v2/chat/completions/share?shareId=BW3mYA56pBlXh4Qw"
 $env:PERSONA_AGENT_API_KEY="..."
 ```
+
+所有积墨 Agent 共用 `PERSONA_AGENT_API_KEY`。Persona 构建使用五阶段 Agent 地址，
+Key 不得进入 Renderer 或提交到仓库。
 
 也可以把以上配置写入仓库根目录的 `.env`。Persona 参考文件先保存到本地工作区，
 由桌面端读取可解析内容，再把整理后的文本作为 Persona Agent 的上下文发送。
