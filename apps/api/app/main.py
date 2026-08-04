@@ -55,6 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         product_promotion_share_client = YunbloomShareClient(
             url=settings.product_promotion_agent_share_url,
             api_key=settings.persona_agent_api_key,
+            max_transport_retries=1,
         )
         app.state.product_promotion_agent = YunbloomProductPromotionAgent(
             product_promotion_share_client

@@ -1470,7 +1470,9 @@ export function App() {
                               : (productAgentResponse.maxSelections ??
                                 productAgentResponse.options.length);
                           const selectionLimitReached =
-                            !selected && productSelectedOptionIds.length >= maxSelections;
+                            productAgentResponse.selectionMode === "multiple" &&
+                            !selected &&
+                            productSelectedOptionIds.length >= maxSelections;
                           return (
                             <button
                               type="button"
