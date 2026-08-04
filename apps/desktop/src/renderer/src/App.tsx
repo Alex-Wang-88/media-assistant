@@ -6,6 +6,7 @@ import type {
   PersonaRagConfirmInput,
   PersonaRagImportResult,
   PersonaStageOption,
+  Platform,
   ProductPromotionAgentResponse,
   ProductPromotionAnswer,
   Project,
@@ -69,6 +70,20 @@ const PERSONA_REPORT_SECTIONS = [
 
 type ContentAgentType = "product_promotion" | "company_pr";
 
+const PRODUCT_PLATFORM_OPTIONS: Array<{
+  id: Platform;
+  label: string;
+  description: string;
+  enabled: boolean;
+}> = [
+  { id: "bilibili", label: "哔哩哔哩", description: "生成 B 站动态标题和正文", enabled: true },
+  { id: "wechat", label: "微信公众号", description: "平台 Agent 暂未接入", enabled: false },
+  { id: "toutiao", label: "今日头条", description: "平台 Agent 暂未接入", enabled: false },
+  { id: "zhihu", label: "知乎", description: "平台 Agent 暂未接入", enabled: false },
+  { id: "weibo", label: "微博", description: "平台 Agent 暂未接入", enabled: false },
+  { id: "xiaohongshu", label: "小红书", description: "平台 Agent 暂未接入", enabled: false },
+];
+
 const CONTENT_AGENT_WELCOME: Record<ContentAgentType, string> = {
   product_promotion:
     "你好，接下来请告诉我本次想推广的产品是什么。可以先从产品名称、主要卖点或活动信息开始。",
@@ -118,6 +133,7 @@ export function App() {
     useState<ProductPromotionAgentResponse | null>(null);
   const [productSelectedOptionIds, setProductSelectedOptionIds] = useState<string[]>([]);
   const [productCustomInput, setProductCustomInput] = useState("");
+  const [productTargetPlatform, setProductTargetPlatform] = useState<Platform | null>(null);
   const [publishCenterOpen, setPublishCenterOpen] = useState(false);
   const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed | null>(null);
   const skipNextProjectReset = useRef(false);
@@ -525,15 +541,46 @@ export function App() {
   };
 
   const selectContentAgent = (type: ContentAgentType) => {
-    contentAgentSessionId.current = crypto.randomUUID();
+    contentAgentSessionId.current = type === "product_promotion" ? null : crypto.randomUUID();
     setProductAgentMessages([]);
     setProductAgentResponse(null);
     setProductSelectedOptionIds([]);
     setProductCustomInput("");
+    setProductTargetPlatform(null);
     setContentAgentType(type);
-    setConversationMessages([personaSetupMessage("assistant", CONTENT_AGENT_WELCOME[type], true)]);
+    setConversationMessages(
+      type === "product_promotion"
+        ? []
+        : [personaSetupMessage("assistant", CONTENT_AGENT_WELCOME[type], true)],
+    );
+    setMessage("");
+    if (type !== "product_promotion") {
+      requestAnimationFrame(() => messageInputRef.current?.focus());
+    }
+  };
+
+  const selectProductPlatform = (platform: Platform) => {
+    if (platform !== "bilibili") return;
+    contentAgentSessionId.current = crypto.randomUUID();
+    setProductTargetPlatform(platform);
+    setConversationMessages([
+      personaSetupMessage("assistant", CONTENT_AGENT_WELCOME.product_promotion, true),
+    ]);
     setMessage("");
     requestAnimationFrame(() => messageInputRef.current?.focus());
+  };
+
+  const returnToProductPlatformPicker = () => {
+    cancelLatestMessage();
+    contentAgentSessionId.current = null;
+    setProductAgentMessages([]);
+    setProductAgentResponse(null);
+    setProductSelectedOptionIds([]);
+    setProductCustomInput("");
+    setProductTargetPlatform(null);
+    setConversationMessages([]);
+    setMessage("");
+    setAgentRequestFailed(false);
   };
 
   const returnToContentTypePicker = () => {
@@ -543,6 +590,7 @@ export function App() {
     setProductAgentResponse(null);
     setProductSelectedOptionIds([]);
     setProductCustomInput("");
+    setProductTargetPlatform(null);
     setContentAgentType(null);
     setConversationMessages([]);
     setMessage("");
@@ -632,6 +680,7 @@ export function App() {
     setProductAgentResponse(null);
     setProductSelectedOptionIds([]);
     setProductCustomInput("");
+    setProductTargetPlatform(null);
     setMessage("");
     setIsStreaming(false);
     cancelLatestMessage();
@@ -642,7 +691,8 @@ export function App() {
     visibleAnswer: string,
   ) => {
     const sessionId = contentAgentSessionId.current;
-    if (!sessionId || isStreaming) return;
+    const targetPlatform = productTargetPlatform;
+    if (!sessionId || !targetPlatform || isStreaming) return;
     const assistantId = crypto.randomUUID();
     const previousResponse = productAgentResponse;
     const userEntry = personaSetupMessage("user", visibleAnswer);
@@ -659,10 +709,12 @@ export function App() {
     setMessage("");
     setIsStreaming(true);
     try {
-      if (!ui.selectedProjectId) {
+      let projectId = ui.selectedProjectId;
+      if (!projectId) {
         const project = await window.desktop.tasks.create({
           name: visibleAnswer.split(/\r?\n/, 1)[0]?.slice(0, 40) || "产品推广",
         });
+        projectId = project.id;
         skipNextProjectReset.current = true;
         ui.selectProject(project.id);
         await queryClient.invalidateQueries({ queryKey: ["projects"] });
@@ -673,18 +725,60 @@ export function App() {
         messages: productAgentMessages,
         answer,
       });
-      setProductAgentMessages((current) => [
-        ...current,
+      const nextProductAgentMessages: ChatMessage[] = [
+        ...productAgentMessages,
         { role: "user", content: result.userMessage },
         { role: "assistant", content: result.assistantMessage },
-      ]);
-      setProductAgentResponse(result.response);
+      ];
+      setProductAgentMessages(nextProductAgentMessages);
       setProductSelectedOptionIds([]);
       setProductCustomInput("");
-      const assistantContent =
-        result.response.status === "completed"
-          ? (result.response.finalContent ?? "文案已生成。")
-          : (result.response.question ?? "请继续补充产品信息。");
+      if (result.response.status === "completed") {
+        const productDraft = result.response.finalContent ?? "";
+        const productConversation: ChatMessage[] = [
+          ...conversationMessages
+            .filter(
+              (entry) =>
+                !entry.modelExcluded && entry.status === "complete" && entry.content.trim(),
+            )
+            .map((entry) => ({ role: entry.role, content: entry.content })),
+          { role: "user", content: visibleAnswer },
+        ];
+        setConversationMessages((current) =>
+          current.map((entry) =>
+            entry.id === assistantId
+              ? { ...entry, content: "正在生成哔哩哔哩文案…", status: "streaming" }
+              : entry,
+          ),
+        );
+        const platformResult = await window.desktop.platformContent.generate({
+          requestId: crypto.randomUUID(),
+          sessionId: crypto.randomUUID(),
+          projectId,
+          platform: "bilibili",
+          productConversation,
+          productDraft,
+        });
+        setPublishCenterSeed({
+          key: crypto.randomUUID(),
+          title: platformResult.title,
+          content: platformResult.content,
+          platform: platformResult.platform,
+        });
+        setPublishCenterOpen(true);
+        setProductAgentResponse(null);
+        setConversationMessages((current) =>
+          current.map((entry) =>
+            entry.id === assistantId
+              ? { ...entry, content: "", hidden: true, status: "complete" }
+              : entry,
+          ),
+        );
+        setAgentRequestFailed(false);
+        return;
+      }
+      setProductAgentResponse(result.response);
+      const assistantContent = result.response.question ?? "请继续补充产品信息。";
       setConversationMessages((current) =>
         current.map((entry) =>
           entry.id === assistantId
@@ -1379,6 +1473,38 @@ export function App() {
                   </article>
                 ) : null}
               </div>
+            ) : conversationMessages.length === 0 &&
+              personaRag.data?.ready &&
+              contentAgentType === "product_promotion" &&
+              !productTargetPlatform ? (
+              <div className="welcome-card content-type-picker platform-type-picker">
+                <button
+                  type="button"
+                  className="content-agent-back platform-picker-back"
+                  onClick={returnToContentTypePicker}
+                >
+                  <span aria-hidden="true">←</span>
+                  返回内容类型选择
+                </button>
+                <span className="welcome-mark">
+                  <Icon name="spark" />
+                </span>
+                <h1>选择目标平台</h1>
+                <p>先确定本次发布平台，产品问询完成后将自动调用对应的平台文案 Agent。</p>
+                <div className="content-type-options platform-options">
+                  {PRODUCT_PLATFORM_OPTIONS.map((platform) => (
+                    <button
+                      type="button"
+                      key={platform.id}
+                      disabled={!platform.enabled}
+                      onClick={() => selectProductPlatform(platform.id)}
+                    >
+                      <strong>{platform.label}</strong>
+                      <span>{platform.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : conversationMessages.length === 0 && personaRag.data?.ready ? (
               <div className="welcome-card content-type-picker">
                 <span className="welcome-mark">
@@ -1432,10 +1558,14 @@ export function App() {
                     type="button"
                     className="content-agent-back"
                     disabled={isStreaming}
-                    onClick={returnToContentTypePicker}
+                    onClick={
+                      contentAgentType === "product_promotion"
+                        ? returnToProductPlatformPicker
+                        : returnToContentTypePicker
+                    }
                   >
                     <span aria-hidden="true">←</span>
-                    返回内容类型选择
+                    {contentAgentType === "product_promotion" ? "返回平台选择" : "返回内容类型选择"}
                   </button>
                 ) : null}
                 {conversationMessages.map((entry) => (

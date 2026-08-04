@@ -28,9 +28,11 @@ import {
   type PersonaRagDocument,
   type PersonaRagDroppedFile,
   type PersonaRagStatus,
+  type ProductPromotionContext,
   type Project,
   persistedPublishDraftStateSchema,
   personaFlowStateSchema,
+  productPromotionContextSchema,
   projectSchema,
 } from "@yoom/desktop-contracts";
 import { projectFrontmatterSchema, serializeMarkdown } from "@yoom/markdown-schemas";
@@ -51,6 +53,7 @@ const PERSONA_RAG_DIRECTORY = "用户Persona RAG";
 const PERSONA_FILE_NAME = "persona.md";
 const PERSONA_FLOW_FILE_NAME = "persona-flow.json";
 const PUBLISH_DRAFTS_FILE_NAME = "publish-drafts.json";
+const PRODUCT_PROMOTION_CONTEXT_DIRECTORY = "product-promotion-contexts";
 
 const OUTPUT_KINDS = new Map<string, Artifact["kind"]>([
   ["文章", "article"],
@@ -200,6 +203,7 @@ export class Workspace {
       ".yoom/cache",
       ".yoom/logs",
       ".yoom/backups",
+      join(".yoom", PRODUCT_PROMOTION_CONTEXT_DIRECTORY),
     ]) {
       mkdirSync(join(root, directory), { recursive: true });
     }
@@ -371,6 +375,33 @@ export class Workspace {
     const validated = persistedPublishDraftStateSchema.parse(state);
     atomicWrite(
       join(this.root, ".yoom", PUBLISH_DRAFTS_FILE_NAME),
+      `${JSON.stringify(validated, null, 2)}\n`,
+    );
+  }
+
+  loadProductPromotionContext(projectId: string): ProductPromotionContext | null {
+    this.project(projectId);
+    const path = join(this.root, ".yoom", PRODUCT_PROMOTION_CONTEXT_DIRECTORY, `${projectId}.json`);
+    if (!existsSync(path) || !statSync(path).isFile()) return null;
+    try {
+      return productPromotionContextSchema.parse(JSON.parse(readFileSync(path, "utf8")));
+    } catch {
+      const backup = join(
+        this.root,
+        ".yoom",
+        "backups",
+        `product-promotion-context.${projectId}.corrupt.${Date.now()}.json`,
+      );
+      renameSync(path, backup);
+      return null;
+    }
+  }
+
+  saveProductPromotionContext(context: ProductPromotionContext): void {
+    const validated = productPromotionContextSchema.parse(context);
+    this.project(validated.projectId);
+    atomicWrite(
+      join(this.root, ".yoom", PRODUCT_PROMOTION_CONTEXT_DIRECTORY, `${validated.projectId}.json`),
       `${JSON.stringify(validated, null, 2)}\n`,
     );
   }

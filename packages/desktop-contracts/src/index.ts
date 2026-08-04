@@ -447,6 +447,34 @@ export type ProductPromotionAgentApiTurnResult = z.infer<
   typeof productPromotionAgentApiTurnResultSchema
 >;
 
+export const platformContentGenerateInputSchema = z.object({
+  requestId: z.uuid(),
+  sessionId: z.uuid(),
+  projectId: projectIdSchema,
+  platform: z.literal("bilibili"),
+  productConversation: z.array(chatMessageSchema).max(100),
+  productDraft: z.string().trim().min(1).max(100_000),
+});
+export type PlatformContentGenerateInput = z.infer<typeof platformContentGenerateInputSchema>;
+
+export const platformContentResultSchema = z.object({
+  platform: z.literal("bilibili"),
+  title: z.string().trim().min(1).max(80),
+  content: z.string().trim().min(1).max(100_000),
+});
+export type PlatformContentResult = z.infer<typeof platformContentResultSchema>;
+
+export const productPromotionContextSchema = z.object({
+  version: z.literal(1),
+  projectId: projectIdSchema,
+  platform: z.literal("bilibili"),
+  productConversation: z.array(chatMessageSchema).max(100),
+  productDraft: z.string().trim().min(1).max(100_000),
+  generatedContent: platformContentResultSchema.nullable(),
+  updatedAt: z.iso.datetime({ offset: true }),
+});
+export type ProductPromotionContext = z.infer<typeof productPromotionContextSchema>;
+
 export const personaFlowTurnInputSchema = z
   .object({
     userMessage: z.string().trim().min(1).max(20_000),
@@ -646,6 +674,9 @@ export interface DesktopApi {
   productPromotion: {
     turn(input: ProductPromotionTurnInput): Promise<ProductPromotionAgentApiTurnResult>;
   };
+  platformContent: {
+    generate(input: PlatformContentGenerateInput): Promise<PlatformContentResult>;
+  };
   files: {
     listOutputs(projectId: string): Promise<Artifact[]>;
     preview(projectId: string, path: string): Promise<FilePreview>;
@@ -692,6 +723,7 @@ export const ipcChannels = {
   personaFlowStart: "persona-flow:start",
   personaFlowTurn: "persona-flow:turn",
   productPromotionTurn: "product-promotion:turn",
+  platformContentGenerate: "platform-content:generate",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",

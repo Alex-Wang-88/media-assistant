@@ -180,6 +180,29 @@ class ProductPromotionAgentApiTurnResult(BaseModel):
     assistant_message: str = Field(alias="assistantMessage", min_length=1, max_length=100_000)
 
 
+class PlatformContentGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    request_id: UUID = Field(alias="requestId")
+    session_id: UUID = Field(alias="sessionId")
+    project_id: UUID = Field(alias="projectId")
+    platform: Literal[Platform.BILIBILI]
+    persona_rag: str = Field(alias="personaRag", min_length=1, max_length=50_000)
+    product_conversation: list[ChatMessage] = Field(
+        alias="productConversation",
+        max_length=100,
+    )
+    product_draft: str = Field(alias="productDraft", min_length=1, max_length=100_000)
+
+
+class PlatformContentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal[Platform.BILIBILI]
+    title: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=100_000)
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -829,6 +829,21 @@ svg {
   transform: translateY(-1px);
 }
 
+.content-type-options button:disabled {
+  cursor: default;
+  opacity: 0.45;
+  transform: none;
+}
+
+.content-type-options button:disabled:hover {
+  background: var(--suggestion-bg);
+  border-color: var(--suggestion-border);
+}
+
+.platform-picker-back {
+  margin-bottom: 20px;
+}
+
 .content-type-options strong {
   color: var(--text);
   font-size: 12px;

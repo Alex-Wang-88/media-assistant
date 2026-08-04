@@ -24,6 +24,7 @@ export type PublishCenterSeed = {
   key: string;
   title: string;
   content: string;
+  platform?: Platform;
 };
 
 type MemoryPublishDraft = PublishDraft & {
@@ -95,6 +96,7 @@ export function PublishCenter({
     const draft = createDraft({
       title: seed.title || "Agent 生成内容",
       content: seed.content,
+      platform: seed.platform ?? null,
       source: "generated",
     });
     setDrafts((current) => [draft, ...current]);

@@ -7,6 +7,9 @@ import {
   type PersonaAgentApiTurnResult,
   type PersonaAgentTurnRequest,
   personaAgentApiTurnResultSchema,
+  type PlatformContentGenerateInput,
+  type PlatformContentResult,
+  platformContentResultSchema,
   type ProductPromotionAgentApiTurnResult,
   type ProductPromotionTurnInput,
   productPromotionAgentApiTurnResultSchema,
@@ -145,6 +148,33 @@ export async function turnProductPromotionAgent(
     throw new ChatApiError(await responseErrorMessage(response), response.status >= 500);
   }
   return productPromotionAgentApiTurnResultSchema.parse(await response.json());
+}
+
+type PlatformContentApiInput = PlatformContentGenerateInput & {
+  personaRag: string;
+};
+
+export async function generatePlatformContent(
+  input: PlatformContentApiInput,
+  apiUrl = process.env.YOOM_API_URL ?? "http://127.0.0.1:8000",
+): Promise<PlatformContentResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiUrl.replace(/\/$/, "")}/v1/platform-content/generate`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch (error) {
+    throw new ChatApiError(
+      `无法连接本地 AI 服务：${error instanceof Error ? error.message : String(error)}`,
+      true,
+    );
+  }
+  if (!response.ok) {
+    throw new ChatApiError(await responseErrorMessage(response), response.status >= 500);
+  }
+  return platformContentResultSchema.parse(await response.json());
 }
 
 function emitFrame(frame: string, onEvent: (event: ChatStreamEvent) => void): void {

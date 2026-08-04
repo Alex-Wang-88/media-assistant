@@ -28,6 +28,7 @@ Thumbs.db
 
 # Tooling / agent state
 .workbuddy/
+.yoom/
 
 # Local-only remote Agent prompts
 docs/persona-agent-prompts.md

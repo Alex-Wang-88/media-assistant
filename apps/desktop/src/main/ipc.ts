@@ -14,6 +14,7 @@ import {
   listOutputsInputSchema,
   persistedPublishDraftStateSchema,
   personaFlowTurnInputSchema,
+  platformContentGenerateInputSchema,
   productPromotionTurnInputSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
@@ -41,6 +42,7 @@ import {
 } from "./bilibili-publisher";
 import {
   getAgentStatus,
+  generatePlatformContent,
   streamChat,
   turnPersonaAgent,
   turnProductPromotionAgent,
@@ -238,6 +240,29 @@ export function registerIpc(access: WorkspaceAccess): void {
     const referenceContext =
       input.messages.length === 0 ? requireWorkspace(access).personaRagReferenceContext() : null;
     return turnProductPromotionAgent({ ...input, referenceContext });
+  });
+  ipcMain.handle(ipcChannels.platformContentGenerate, async (_event, raw) => {
+    const input = platformContentGenerateInputSchema.parse(raw);
+    const workspace = requireWorkspace(access);
+    const personaRag = workspace.personaRagReferenceContext();
+    if (!personaRag.trim()) throw new Error("本地用户画像内容为空，无法生成平台文案");
+    const baseContext = {
+      version: 1 as const,
+      projectId: input.projectId,
+      platform: input.platform,
+      productConversation: input.productConversation,
+      productDraft: input.productDraft,
+      generatedContent: null,
+      updatedAt: new Date().toISOString(),
+    };
+    workspace.saveProductPromotionContext(baseContext);
+    const result = await generatePlatformContent({ ...input, personaRag });
+    workspace.saveProductPromotionContext({
+      ...baseContext,
+      generatedContent: result,
+      updatedAt: new Date().toISOString(),
+    });
+    return result;
   });
   ipcMain.handle(ipcChannels.filesListOutputs, (_event, raw) => {
     const input = listOutputsInputSchema.parse(raw);
