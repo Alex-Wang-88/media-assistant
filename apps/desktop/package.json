@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "preview": "electron-vite preview"
+    "preview": "electron-vite preview",
+    "dist:mac": "electron-builder --config electron-builder.yml --mac dmg --arm64"
   },
   "dependencies": {
     "@radix-ui/react-switch": "1.3.5",
@@ -30,6 +31,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.4",
     "electron": "43.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "5.0.0",
     "jsdom": "29.1.1",
     "tailwindcss": "4.3.3",

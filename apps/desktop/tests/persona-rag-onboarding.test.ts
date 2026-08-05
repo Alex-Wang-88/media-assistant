@@ -197,10 +197,23 @@ describe("Persona RAG plain-text onboarding", () => {
           importFiles: vi.fn(async () => ({ names: [] })),
           importDroppedFiles: vi.fn(async () => ({ names: [] })),
         },
+        /*
         personaFlow: {
           load: vi.fn(async () => null),
           start: vi.fn(async () => activeFlow),
           turn: turnPersona,
+        },
+        */
+       personaFlow: {
+          load: vi.fn(async () => null),
+          start: vi.fn(async () => activeFlow),
+          turn: turnPersona,
+        },
+        productPromotion: {
+          turn: vi.fn(),
+        },
+        platformContent: {
+          generate: vi.fn(),
         },
         files: {
           listOutputs: vi.fn(),

@@ -38,3 +38,8 @@ private-platform-sessions/
 
 # Local-only platform DOM inspection scripts and output
 .local-platform-tools/
+
+# Desktop packaging output
+.build/
+release/
+*.spec

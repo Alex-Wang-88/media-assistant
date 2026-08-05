@@ -1,0 +1,35 @@
+appId: cn.yoom.mediaassistant
+productName: 获客智能助手
+
+asar: true
+
+directories:
+  output: ../../.build/mac
+
+files:
+  - out/**/*
+  - package.json
+
+extraResources:
+  - from: ../api/dist/yoom-api
+    to: api/yoom-api
+
+mac:
+  category: public.app-category.business
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  identity: null
+  hardenedRuntime: false
+  artifactName: 获客智能助手-${version}-${arch}.${ext}
+
+dmg:
+  title: 获客智能助手 ${version}
+  contents:
+    - x: 140
+      y: 220
+    - x: 420
+      y: 220
+      type: link
+      path: /Applications
