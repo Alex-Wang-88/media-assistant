@@ -7,6 +7,7 @@ import type {
   PersonaRagImportResult,
   PersonaStageOption,
   Platform,
+  PlatformContentPlatform,
   ProductPromotionAgentResponse,
   ProductPromotionAnswer,
   Project,
@@ -79,7 +80,7 @@ const PRODUCT_PLATFORM_OPTIONS: Array<{
   { id: "bilibili", label: "哔哩哔哩", description: "生成 B 站动态标题和正文", enabled: true },
   { id: "wechat", label: "微信公众号", description: "平台 Agent 暂未接入", enabled: false },
   { id: "toutiao", label: "今日头条", description: "平台 Agent 暂未接入", enabled: false },
-  { id: "zhihu", label: "知乎", description: "平台 Agent 暂未接入", enabled: false },
+  { id: "zhihu", label: "知乎", description: "生成知乎文章标题和正文", enabled: true },
   { id: "weibo", label: "微博", description: "平台 Agent 暂未接入", enabled: false },
   { id: "xiaohongshu", label: "小红书", description: "平台 Agent 暂未接入", enabled: false },
 ];
@@ -90,6 +91,10 @@ const CONTENT_AGENT_WELCOME: Record<ContentAgentType, string> = {
   company_pr:
     "你好，接下来请告诉我这次公司软文想表达的主题。可以是品牌故事、企业动态、公司理念或其他方向。",
 };
+
+function isProductContentPlatform(platform: Platform): platform is PlatformContentPlatform {
+  return platform === "bilibili" || platform === "zhihu";
+}
 
 function parsePersonaReport(source: string): string | null {
   const content = source.trim();
@@ -133,9 +138,12 @@ export function App() {
     useState<ProductPromotionAgentResponse | null>(null);
   const [productSelectedOptionIds, setProductSelectedOptionIds] = useState<string[]>([]);
   const [productCustomInput, setProductCustomInput] = useState("");
-  const [productTargetPlatform, setProductTargetPlatform] = useState<Platform | null>(null);
+  const [productTargetPlatforms, setProductTargetPlatforms] = useState<PlatformContentPlatform[]>(
+    [],
+  );
+  const [productPlatformSelectionConfirmed, setProductPlatformSelectionConfirmed] = useState(false);
   const [publishCenterOpen, setPublishCenterOpen] = useState(false);
-  const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed | null>(null);
+  const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed[] | null>(null);
   const skipNextProjectReset = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const activeScrollItems = useMemo(
@@ -546,7 +554,8 @@ export function App() {
     setProductAgentResponse(null);
     setProductSelectedOptionIds([]);
     setProductCustomInput("");
-    setProductTargetPlatform(null);
+    setProductTargetPlatforms([]);
+    setProductPlatformSelectionConfirmed(false);
     setContentAgentType(type);
     setConversationMessages(
       type === "product_promotion"
@@ -559,10 +568,24 @@ export function App() {
     }
   };
 
-  const selectProductPlatform = (platform: Platform) => {
-    if (platform !== "bilibili") return;
+  const toggleProductPlatform = (platform: Platform) => {
+    if (
+      !isProductContentPlatform(platform) ||
+      !PRODUCT_PLATFORM_OPTIONS.some((option) => option.id === platform && option.enabled)
+    ) {
+      return;
+    }
+    setProductTargetPlatforms((current) =>
+      current.includes(platform)
+        ? current.filter((candidate) => candidate !== platform)
+        : [...current, platform],
+    );
+  };
+
+  const confirmProductPlatforms = () => {
+    if (productTargetPlatforms.length === 0) return;
     contentAgentSessionId.current = crypto.randomUUID();
-    setProductTargetPlatform(platform);
+    setProductPlatformSelectionConfirmed(true);
     setConversationMessages([
       personaSetupMessage("assistant", CONTENT_AGENT_WELCOME.product_promotion, true),
     ]);
@@ -577,7 +600,7 @@ export function App() {
     setProductAgentResponse(null);
     setProductSelectedOptionIds([]);
     setProductCustomInput("");
-    setProductTargetPlatform(null);
+    setProductPlatformSelectionConfirmed(false);
     setConversationMessages([]);
     setMessage("");
     setAgentRequestFailed(false);
@@ -590,7 +613,8 @@ export function App() {
     setProductAgentResponse(null);
     setProductSelectedOptionIds([]);
     setProductCustomInput("");
-    setProductTargetPlatform(null);
+    setProductTargetPlatforms([]);
+    setProductPlatformSelectionConfirmed(false);
     setContentAgentType(null);
     setConversationMessages([]);
     setMessage("");
@@ -680,7 +704,8 @@ export function App() {
     setProductAgentResponse(null);
     setProductSelectedOptionIds([]);
     setProductCustomInput("");
-    setProductTargetPlatform(null);
+    setProductTargetPlatforms([]);
+    setProductPlatformSelectionConfirmed(false);
     setMessage("");
     setIsStreaming(false);
     cancelLatestMessage();
@@ -691,8 +716,8 @@ export function App() {
     visibleAnswer: string,
   ) => {
     const sessionId = contentAgentSessionId.current;
-    const targetPlatform = productTargetPlatform;
-    if (!sessionId || !targetPlatform || isStreaming) return;
+    const targetPlatforms = productTargetPlatforms;
+    if (!sessionId || targetPlatforms.length === 0 || isStreaming) return;
     const assistantId = crypto.randomUUID();
     const previousResponse = productAgentResponse;
     const userEntry = personaSetupMessage("user", visibleAnswer);
@@ -747,24 +772,40 @@ export function App() {
         setConversationMessages((current) =>
           current.map((entry) =>
             entry.id === assistantId
-              ? { ...entry, content: "正在生成哔哩哔哩文案…", status: "streaming" }
+              ? {
+                  ...entry,
+                  content: `正在生成${targetPlatforms
+                    .map(
+                      (platform) =>
+                        PRODUCT_PLATFORM_OPTIONS.find((option) => option.id === platform)?.label ??
+                        platform,
+                    )
+                    .join("、")}文案…`,
+                  status: "streaming",
+                }
               : entry,
           ),
         );
-        const platformResult = await window.desktop.platformContent.generate({
-          requestId: crypto.randomUUID(),
-          sessionId: crypto.randomUUID(),
-          projectId,
-          platform: "bilibili",
-          productConversation,
-          productDraft,
-        });
-        setPublishCenterSeed({
-          key: crypto.randomUUID(),
-          title: platformResult.title,
-          content: platformResult.content,
-          platform: platformResult.platform,
-        });
+        const platformResults = await Promise.all(
+          targetPlatforms.map((platform) =>
+            window.desktop.platformContent.generate({
+              requestId: crypto.randomUUID(),
+              sessionId: crypto.randomUUID(),
+              projectId,
+              platform,
+              productConversation,
+              productDraft,
+            }),
+          ),
+        );
+        setPublishCenterSeed(
+          platformResults.map((platformResult) => ({
+            key: crypto.randomUUID(),
+            title: platformResult.title,
+            content: platformResult.content,
+            platform: platformResult.platform,
+          })),
+        );
         setPublishCenterOpen(true);
         setProductAgentResponse(null);
         setConversationMessages((current) =>
@@ -1476,7 +1517,7 @@ export function App() {
             ) : conversationMessages.length === 0 &&
               personaRag.data?.ready &&
               contentAgentType === "product_promotion" &&
-              !productTargetPlatform ? (
+              !productPlatformSelectionConfirmed ? (
               <div className="welcome-card content-type-picker platform-type-picker">
                 <button
                   type="button"
@@ -1490,19 +1531,37 @@ export function App() {
                   <Icon name="spark" />
                 </span>
                 <h1>选择目标平台</h1>
-                <p>先确定本次发布平台，产品问询完成后将自动调用对应的平台文案 Agent。</p>
+                <p>可同时选择多个发布平台，产品问询完成后将分别调用对应的平台文案 Agent。</p>
                 <div className="content-type-options platform-options">
                   {PRODUCT_PLATFORM_OPTIONS.map((platform) => (
                     <button
                       type="button"
                       key={platform.id}
                       disabled={!platform.enabled}
-                      onClick={() => selectProductPlatform(platform.id)}
+                      className={
+                        productTargetPlatforms.some((candidate) => candidate === platform.id)
+                          ? "selected"
+                          : ""
+                      }
+                      aria-pressed={productTargetPlatforms.some(
+                        (candidate) => candidate === platform.id,
+                      )}
+                      onClick={() => toggleProductPlatform(platform.id)}
                     >
                       <strong>{platform.label}</strong>
                       <span>{platform.description}</span>
                     </button>
                   ))}
+                </div>
+                <div className="platform-picker-actions">
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={productTargetPlatforms.length === 0}
+                    onClick={confirmProductPlatforms}
+                  >
+                    开始填写产品信息
+                  </button>
                 </div>
               </div>
             ) : conversationMessages.length === 0 && personaRag.data?.ready ? (
@@ -1833,11 +1892,13 @@ export function App() {
                   const artifact = (artifacts.data ?? []).find(
                     (entry) => entry.path === ui.selectedArtifactPath,
                   );
-                  setPublishCenterSeed({
-                    key: crypto.randomUUID(),
-                    title: artifact?.name.replace(/\.[^.]+$/, "") || "Agent 生成内容",
-                    content: preview.data?.content ?? "",
-                  });
+                  setPublishCenterSeed([
+                    {
+                      key: crypto.randomUUID(),
+                      title: artifact?.name.replace(/\.[^.]+$/, "") || "Agent 生成内容",
+                      content: preview.data?.content ?? "",
+                    },
+                  ]);
                   setPublishCenterOpen(true);
                 }}
               >

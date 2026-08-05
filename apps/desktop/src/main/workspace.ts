@@ -379,9 +379,17 @@ export class Workspace {
     );
   }
 
-  loadProductPromotionContext(projectId: string): ProductPromotionContext | null {
+  loadProductPromotionContext(
+    projectId: string,
+    platform: ProductPromotionContext["platform"],
+  ): ProductPromotionContext | null {
     this.project(projectId);
-    const path = join(this.root, ".yoom", PRODUCT_PROMOTION_CONTEXT_DIRECTORY, `${projectId}.json`);
+    const path = join(
+      this.root,
+      ".yoom",
+      PRODUCT_PROMOTION_CONTEXT_DIRECTORY,
+      `${projectId}.${platform}.json`,
+    );
     if (!existsSync(path) || !statSync(path).isFile()) return null;
     try {
       return productPromotionContextSchema.parse(JSON.parse(readFileSync(path, "utf8")));
@@ -390,7 +398,7 @@ export class Workspace {
         this.root,
         ".yoom",
         "backups",
-        `product-promotion-context.${projectId}.corrupt.${Date.now()}.json`,
+        `product-promotion-context.${projectId}.${platform}.corrupt.${Date.now()}.json`,
       );
       renameSync(path, backup);
       return null;
@@ -401,7 +409,12 @@ export class Workspace {
     const validated = productPromotionContextSchema.parse(context);
     this.project(validated.projectId);
     atomicWrite(
-      join(this.root, ".yoom", PRODUCT_PROMOTION_CONTEXT_DIRECTORY, `${validated.projectId}.json`),
+      join(
+        this.root,
+        ".yoom",
+        PRODUCT_PROMOTION_CONTEXT_DIRECTORY,
+        `${validated.projectId}.${validated.platform}.json`,
+      ),
       `${JSON.stringify(validated, null, 2)}\n`,
     );
   }

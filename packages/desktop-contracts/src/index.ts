@@ -447,18 +447,21 @@ export type ProductPromotionAgentApiTurnResult = z.infer<
   typeof productPromotionAgentApiTurnResultSchema
 >;
 
+export const platformContentPlatformSchema = z.enum(["bilibili", "zhihu"]);
+export type PlatformContentPlatform = z.infer<typeof platformContentPlatformSchema>;
+
 export const platformContentGenerateInputSchema = z.object({
   requestId: z.uuid(),
   sessionId: z.uuid(),
   projectId: projectIdSchema,
-  platform: z.literal("bilibili"),
+  platform: platformContentPlatformSchema,
   productConversation: z.array(chatMessageSchema).max(100),
   productDraft: z.string().trim().min(1).max(100_000),
 });
 export type PlatformContentGenerateInput = z.infer<typeof platformContentGenerateInputSchema>;
 
 export const platformContentResultSchema = z.object({
-  platform: z.literal("bilibili"),
+  platform: platformContentPlatformSchema,
   title: z.string().trim().min(1).max(80),
   content: z.string().trim().min(1).max(100_000),
 });
@@ -467,7 +470,7 @@ export type PlatformContentResult = z.infer<typeof platformContentResultSchema>;
 export const productPromotionContextSchema = z.object({
   version: z.literal(1),
   projectId: projectIdSchema,
-  platform: z.literal("bilibili"),
+  platform: platformContentPlatformSchema,
   productConversation: z.array(chatMessageSchema).max(100),
   productDraft: z.string().trim().min(1).max(100_000),
   generatedContent: platformContentResultSchema.nullable(),
@@ -522,6 +525,13 @@ export type LocalPublishImage = z.infer<typeof localPublishImageSchema>;
 export const publishDraftImageReferenceSchema = localPublishImageSchema.omit({ previewUrl: true });
 export type PublishDraftImageReference = z.infer<typeof publishDraftImageReferenceSchema>;
 
+export const publishDraftPlatformVariantSchema = z.object({
+  platform: platformSchema,
+  title: z.string().max(80),
+  content: z.string().max(100_000),
+});
+export type PublishDraftPlatformVariant = z.infer<typeof publishDraftPlatformVariantSchema>;
+
 export const publishDraftSchema = z.object({
   id: z.uuid(),
   title: z.string().max(80),
@@ -532,6 +542,7 @@ export const publishDraftSchema = z.object({
   images: z.array(localPublishImageSchema).max(20),
   source: z.enum(["manual", "generated"]),
   pinned: z.boolean(),
+  platformVariants: z.array(publishDraftPlatformVariantSchema).max(6).optional(),
 });
 export type PublishDraft = z.infer<typeof publishDraftSchema>;
 

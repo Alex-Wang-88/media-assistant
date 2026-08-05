@@ -8,7 +8,7 @@ import type {
   PublishDraftState,
   ZhihuAccount,
 } from "@yoom/desktop-contracts";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const NEW_BILIBILI_ACCOUNT_VALUE = "__new_bilibili_account__";
 const NEW_ZHIHU_ACCOUNT_VALUE = "__new_zhihu_account__";
@@ -41,7 +41,7 @@ type MemoryPublishDraft = PublishDraft & {
 type PublishCenterProps = {
   open: boolean;
   workspacePath: string | null;
-  seed: PublishCenterSeed | null;
+  seed: PublishCenterSeed[] | null;
   onSeedConsumed(): void;
   onClose(): void;
 };
@@ -100,17 +100,64 @@ export function PublishCenter({
     ...drafts.filter((draft) => !draft.pinned),
   ];
 
+  const refreshPlatformAccounts = useCallback(async (showLoading = false) => {
+    if (showLoading) setAccountsLoading(true);
+    try {
+      const [accounts, loadedZhihuAccounts] = await Promise.all([
+        window.desktop.publish.listBilibiliAccounts(),
+        window.desktop.publish.listZhihuAccounts?.() ?? Promise.resolve([]),
+      ]);
+      setBilibiliAccounts(accounts);
+      setZhihuAccounts(loadedZhihuAccounts);
+      const defaultBilibiliAccountId = accounts[0]?.id ?? null;
+      const defaultZhihuAccountId = loadedZhihuAccounts[0]?.id ?? null;
+      setDrafts((current) =>
+        current.map((draft) => {
+          if (draft.platform === "bilibili" && !draft.bilibiliAccountId) {
+            return { ...draft, bilibiliAccountId: defaultBilibiliAccountId };
+          }
+          if (draft.platform === "zhihu" && !draft.zhihuAccountId) {
+            return { ...draft, zhihuAccountId: defaultZhihuAccountId };
+          }
+          return draft;
+        }),
+      );
+    } catch (reason: unknown) {
+      if (showLoading) setError(readableError(reason));
+    } finally {
+      if (showLoading) setAccountsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (!seed || !draftsLoaded) return;
-    const draft = createDraft({
-      title: seed.title || "Agent 生成内容",
-      content: seed.content,
-      platform: seed.platform ?? null,
+    if (!seed || seed.length === 0 || !draftsLoaded) return;
+    const primary = seed[0];
+    if (!primary) return;
+    const platformVariants = seed.flatMap((entry) =>
+      entry.platform
+        ? [
+            {
+              platform: entry.platform,
+              title: entry.title || "Agent 生成内容",
+              content: entry.content,
+            },
+          ]
+        : [],
+    );
+    const generatedDraft = createDraft({
+      title: primary.title || "Agent 生成内容",
+      content: primary.content,
+      platform: primary.platform ?? null,
       source: "generated",
+      platformVariants,
     });
-    setDrafts((current) => [draft, ...current]);
-    setSelectedDraftId(draft.id);
-    setNotice("生成内容已转入当前内存草稿");
+    setDrafts((current) => [generatedDraft, ...current]);
+    setSelectedDraftId(generatedDraft.id);
+    setNotice(
+      platformVariants.length > 1
+        ? `${platformVariants.length} 个平台版本已合并到同一份草稿`
+        : "生成内容已转入当前内存草稿",
+    );
     setError(null);
     setClearConfirm(false);
     onSeedConsumed();
@@ -168,46 +215,83 @@ export function PublishCenter({
 
   useEffect(() => {
     if (!open) return;
-    let cancelled = false;
-    setAccountsLoading(true);
-    Promise.all([
-      window.desktop.publish.listBilibiliAccounts(),
-      window.desktop.publish.listZhihuAccounts?.() ?? Promise.resolve([]),
-    ])
-      .then(([accounts, loadedZhihuAccounts]) => {
-        if (cancelled) return;
-        setBilibiliAccounts(accounts);
-        setZhihuAccounts(loadedZhihuAccounts);
-        const defaultBilibiliAccountId = accounts[0]?.id ?? null;
-        const defaultZhihuAccountId = loadedZhihuAccounts[0]?.id ?? null;
-        setDrafts((current) =>
-          current.map((draft) => {
-            if (draft.platform === "bilibili" && !draft.bilibiliAccountId) {
-              return { ...draft, bilibiliAccountId: defaultBilibiliAccountId };
-            }
-            if (draft.source === "manual" && draft.platform === "zhihu" && !draft.zhihuAccountId) {
-              return { ...draft, zhihuAccountId: defaultZhihuAccountId };
-            }
-            return draft;
-          }),
-        );
-      })
-      .catch((reason: unknown) => {
-        if (!cancelled) setError(readableError(reason));
-      })
-      .finally(() => {
-        if (!cancelled) setAccountsLoading(false);
-      });
-    return () => {
-      cancelled = true;
+    void refreshPlatformAccounts(true);
+    const handleWindowFocus = () => {
+      void refreshPlatformAccounts();
     };
-  }, [open]);
+    window.addEventListener("focus", handleWindowFocus);
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, [open, refreshPlatformAccounts]);
 
   const updateSelectedDraft = (patch: Partial<MemoryPublishDraft>) => {
     if (!selectedDraft) return;
     setDrafts((current) =>
-      current.map((draft) => (draft.id === selectedDraft.id ? { ...draft, ...patch } : draft)),
+      current.map((draft) => {
+        if (draft.id !== selectedDraft.id) return draft;
+        const nextDraft = { ...draft, ...patch };
+        if (
+          draft.source !== "generated" ||
+          !draft.platform ||
+          !draft.platformVariants?.length ||
+          (!("title" in patch) && !("content" in patch))
+        ) {
+          return nextDraft;
+        }
+        return {
+          ...nextDraft,
+          platformVariants: draft.platformVariants.map((variant) =>
+            variant.platform === draft.platform
+              ? {
+                  ...variant,
+                  title: patch.title ?? draft.title,
+                  content: patch.content ?? draft.content,
+                }
+              : variant,
+          ),
+        };
+      }),
     );
+  };
+
+  const switchGeneratedPlatform = (platform: Platform) => {
+    if (!selectedDraft?.platformVariants?.length) return;
+    const variants = selectedDraft.platformVariants.map((variant) =>
+      variant.platform === selectedDraft.platform
+        ? {
+            ...variant,
+            title: selectedDraft.title,
+            content: selectedDraft.content,
+          }
+        : variant,
+    );
+    const nextVariant = variants.find((variant) => variant.platform === platform);
+    if (!nextVariant) return;
+    setDrafts((current) =>
+      current.map((draft) =>
+        draft.id === selectedDraft.id
+          ? {
+              ...draft,
+              platform,
+              title: nextVariant.title,
+              content: nextVariant.content,
+              bilibiliAccountId:
+                platform === "bilibili"
+                  ? (draft.bilibiliAccountId ?? bilibiliAccounts[0]?.id ?? null)
+                  : draft.bilibiliAccountId,
+              zhihuAccountId:
+                platform === "zhihu"
+                  ? (draft.zhihuAccountId ?? zhihuAccounts[0]?.id ?? null)
+                  : draft.zhihuAccountId,
+              platformVariants: variants,
+              automationResult: null,
+            }
+          : draft,
+      ),
+    );
+    setNotice(null);
+    setError(null);
   };
 
   const selectImages = useMutation({
@@ -327,7 +411,7 @@ export function PublishCenter({
           autoPublish: autoPublishByPlatform.bilibili,
         });
       }
-      if (selectedDraft.platform === "zhihu" && selectedDraft.source === "manual") {
+      if (selectedDraft.platform === "zhihu") {
         if (!selectedDraft.zhihuAccountId) throw new Error("请先选择知乎发布账号");
         const openZhihu = window.desktop.publish.openZhihu;
         if (!openZhihu) throw new Error("当前应用版本未加载知乎填充功能");
@@ -343,6 +427,7 @@ export function PublishCenter({
     onSuccess: (result) => {
       const completed = result.state === "filled" || result.state === "published";
       updateSelectedDraft({ automationResult: completed ? result : null });
+      void refreshPlatformAccounts();
       setNotice(null);
       setError(completed ? null : result.message);
     },
@@ -378,7 +463,19 @@ export function PublishCenter({
     const name = renameDraftValue.trim();
     if (!renameDraftId || !name) return;
     setDrafts((current) =>
-      current.map((draft) => (draft.id === renameDraftId ? { ...draft, title: name } : draft)),
+      current.map((draft) => {
+        if (draft.id !== renameDraftId) return draft;
+        return {
+          ...draft,
+          title: name,
+          platformVariants:
+            draft.source === "generated" && draft.platform && draft.platformVariants
+              ? draft.platformVariants.map((variant) =>
+                  variant.platform === draft.platform ? { ...variant, title: name } : variant,
+                )
+              : draft.platformVariants,
+        };
+      }),
     );
     setRenameDraftId(null);
     setRenameDraftValue("");
@@ -601,17 +698,34 @@ export function PublishCenter({
                 />
               </label>
               {selectedDraft.source === "generated" ? (
-                <div className="publish-platform-field">
-                  <span>目标平台</span>
-                  <div className="publish-platform-fixed">
-                    <strong>
-                      {selectedDraft.platform
-                        ? PLATFORM_LABELS[selectedDraft.platform]
-                        : "未记录目标平台"}
-                    </strong>
-                    <small>由 Agent 内容流程确定</small>
+                selectedDraft.platformVariants && selectedDraft.platformVariants.length > 1 ? (
+                  <label>
+                    目标平台
+                    <select
+                      value={selectedDraft.platform ?? ""}
+                      onChange={(event) => switchGeneratedPlatform(event.target.value as Platform)}
+                    >
+                      {selectedDraft.platformVariants.map((variant) => (
+                        <option key={variant.platform} value={variant.platform}>
+                          {PLATFORM_LABELS[variant.platform]}
+                        </option>
+                      ))}
+                    </select>
+                    <small>切换平台会显示对应版本，已做的修改会分别保留</small>
+                  </label>
+                ) : (
+                  <div className="publish-platform-field">
+                    <span>目标平台</span>
+                    <div className="publish-platform-fixed">
+                      <strong>
+                        {selectedDraft.platform
+                          ? PLATFORM_LABELS[selectedDraft.platform]
+                          : "未记录目标平台"}
+                      </strong>
+                      <small>由 Agent 内容流程确定</small>
+                    </div>
                   </div>
-                </div>
+                )
               ) : (
                 <label>
                   目标平台
@@ -715,7 +829,7 @@ export function PublishCenter({
                   ) : null}
                 </div>
               ) : null}
-              {selectedDraft.source === "manual" && selectedDraft.platform === "zhihu" ? (
+              {selectedDraft.platform === "zhihu" ? (
                 <div className="publish-account-setting">
                   <label>
                     发布账号
@@ -755,10 +869,7 @@ export function PublishCenter({
                       </select>
                       <button
                         type="button"
-                        disabled={
-                          !selectedDraft.zhihuAccountId ||
-                          deleteZhihuAccount.isPending
-                        }
+                        disabled={!selectedDraft.zhihuAccountId || deleteZhihuAccount.isPending}
                         onClick={() => {
                           const account = zhihuAccounts.find(
                             (candidate) => candidate.id === selectedDraft.zhihuAccountId,
@@ -929,9 +1040,7 @@ export function PublishCenter({
                     !(
                       (selectedDraft.platform === "bilibili" &&
                         Boolean(selectedDraft.bilibiliAccountId)) ||
-                      (selectedDraft.source === "manual" &&
-                        selectedDraft.platform === "zhihu" &&
-                        Boolean(selectedDraft.zhihuAccountId))
+                      (selectedDraft.platform === "zhihu" && Boolean(selectedDraft.zhihuAccountId))
                     ) ||
                     !selectedDraft.content.trim()
                   }
@@ -940,7 +1049,7 @@ export function PublishCenter({
                       ? autoPublishByPlatform.bilibili
                         ? "打开持久登录的平台窗口，完成填充后自动点击发布"
                         : "打开持久登录的平台窗口并填充，最终发布由你确认"
-                      : selectedDraft.source === "manual" && selectedDraft.platform === "zhihu"
+                      : selectedDraft.platform === "zhihu"
                         ? "打开知乎写文章页面，填入标题、正文和本地配图"
                         : "当前平台尚未接入填充"
                   }

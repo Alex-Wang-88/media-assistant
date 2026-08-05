@@ -12,16 +12,22 @@ async def generate_platform_content(
     body: PlatformContentGenerateRequest,
     request: Request,
 ) -> PlatformContentResult:
+    provider_name = f"{body.platform.value}_content_agent"
     provider: YunbloomPlatformContentAgent | None = getattr(
         request.app.state,
-        "bilibili_content_agent",
+        provider_name,
         None,
     )
     if provider is None:
+        variable_name = (
+            "BILIBILI_CONTENT_AGENT_SHARE_URL"
+            if body.platform.value == "bilibili"
+            else "ZHIHU_CONTENT_AGENT_SHARE_URL"
+        )
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "哔哩哔哩文案 Agent 未配置，请设置 "
-            "BILIBILI_CONTENT_AGENT_SHARE_URL 和 PERSONA_AGENT_API_KEY",
+            f"{body.platform.value} 文案 Agent 未配置，请设置 "
+            f"{variable_name} 和 PERSONA_AGENT_API_KEY",
         )
     try:
         return await provider.generate(body)
