@@ -1,12 +1,18 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, type OpenDialogOptions, screen, session } from "electron";
 import { guardWindowNavigation, registerIpc } from "./ipc";
 import { Workspace } from "./workspace";
+import { startLocalApi } from "./local-api";
 
+const mainDirectory = dirname(fileURLToPath(import.meta.url));
+
+app.setName("获客智能助手");
 let mainWindow: BrowserWindow | null = null;
 let workspace: Workspace | null = null;
 let workspaceRegistry: { activePath: string; paths: string[] } | null = null;
+let stopLocalApi: (() => void) | null = null;
 
 function workspacePreferencePath(): string {
   return join(app.getPath("userData"), "workspace-path.txt");
@@ -141,7 +147,7 @@ async function createWindow(): Promise<void> {
     backgroundColor: "#0b0d10",
     title: "获客智能助手",
     webPreferences: {
-      preload: join(__dirname, "../preload/index.cjs"),
+      preload: join(mainDirectory, "../preload/index.cjs"),
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
@@ -151,10 +157,10 @@ async function createWindow(): Promise<void> {
   if (development && process.env.ELECTRON_RENDERER_URL) {
     await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    await mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
+    await mainWindow.loadFile(join(mainDirectory, "../renderer/index.html"));
   }
 }
-
+/*
 app.whenReady().then(async () => {
   workspaceRegistry = loadWorkspaceRegistry();
   await openWorkspace(workspaceRegistry.activePath);
@@ -166,11 +172,43 @@ app.whenReady().then(async () => {
   });
   await createWindow();
 });
+*/
+app.whenReady().then(async () => {
+  try {
+    stopLocalApi = await startLocalApi();
+
+    workspaceRegistry = loadWorkspaceRegistry();
+    await openWorkspace(workspaceRegistry.activePath);
+
+    registerIpc({
+      current: () => workspace,
+      select: chooseWorkspace,
+      list: listWorkspaces,
+      activate: activateWorkspace,
+    });
+
+    await createWindow();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    dialog.showErrorBox(
+      "获客智能助手启动失败",
+      `${message}\n\n详细日志位于应用数据目录的 logs/api.log`,
+    );
+
+    app.quit();
+  }
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-app.on("before-quit", () => workspace?.close());
+// app.on("before-quit", () => workspace?.close());
+app.on("before-quit", () => {
+  stopLocalApi?.();
+  stopLocalApi = null;
+  workspace?.close();
+});
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) void createWindow();
 });

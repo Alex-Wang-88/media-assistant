@@ -1,6 +1,8 @@
 packages:
   - apps/desktop
   - packages/*
+allowBuilds:
+  electron-winstaller: false
 minimumReleaseAgeExclude:
   - '@radix-ui/primitive@1.1.7'
   - '@radix-ui/react-compose-refs@1.1.4'

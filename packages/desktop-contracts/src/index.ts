@@ -352,6 +352,132 @@ export const personaAgentApiTurnResultSchema = z.object({
 });
 export type PersonaAgentApiTurnResult = z.infer<typeof personaAgentApiTurnResultSchema>;
 
+export const productPromotionSelectionModeSchema = z.enum(["single", "multiple", "text"]);
+export type ProductPromotionSelectionMode = z.infer<typeof productPromotionSelectionModeSchema>;
+
+export const productPromotionAnswerSchema = z
+  .object({
+    selectedOptions: z.array(z.string().trim().min(1).max(200)).max(8).default([]),
+    customInput: z.string().trim().max(20_000).default(""),
+    skipped: z.boolean().default(false),
+    ranked: z.boolean().default(false),
+  })
+  .refine(
+    (answer) =>
+      answer.skipped || answer.selectedOptions.length > 0 || answer.customInput.length > 0,
+    "必须选择选项、填写内容或跳过当前问题",
+  );
+export type ProductPromotionAnswer = z.infer<typeof productPromotionAnswerSchema>;
+
+export const productPromotionAgentResponseSchema = z
+  .object({
+    status: z.enum(["questioning", "completed"]),
+    questionId: z.string().trim().min(1).max(80).nullable().default(null),
+    question: z.string().trim().min(1).max(500).nullable().default(null),
+    selectionMode: productPromotionSelectionModeSchema.nullable().default(null),
+    options: z.array(personaStageOptionSchema).max(8).default([]),
+    maxSelections: z.number().int().min(1).max(8).nullable().default(null),
+    rankSelections: z.boolean().default(false),
+    allowCustomInput: z.boolean().default(true),
+    allowSkip: z.boolean().default(true),
+    finalContent: z.string().trim().min(1).max(100_000).nullable().default(null),
+  })
+  .superRefine((response, context) => {
+    if (response.status === "questioning") {
+      if (!response.questionId || !response.question || !response.selectionMode) {
+        context.addIssue({
+          code: "custom",
+          path: ["question"],
+          message: "问询状态必须包含问题编号、问题和选择模式",
+        });
+      }
+      if (response.selectionMode !== "text" && response.options.length < 2) {
+        context.addIssue({
+          code: "custom",
+          path: ["options"],
+          message: "单选或多选问题必须提供至少两个选项",
+        });
+      }
+      if (response.selectionMode === "text" && !response.allowCustomInput) {
+        context.addIssue({
+          code: "custom",
+          path: ["allowCustomInput"],
+          message: "文本问题必须允许手动输入",
+        });
+      }
+      if (response.rankSelections && response.selectionMode !== "multiple") {
+        context.addIssue({
+          code: "custom",
+          path: ["rankSelections"],
+          message: "只有多选问题可以要求优先级排序",
+        });
+      }
+      if (response.rankSelections && (response.maxSelections ?? 0) < 2) {
+        context.addIssue({
+          code: "custom",
+          path: ["maxSelections"],
+          message: "优先级多选必须设置至少两个最大选择项",
+        });
+      }
+    }
+    if (response.status === "completed" && !response.finalContent) {
+      context.addIssue({
+        code: "custom",
+        path: ["finalContent"],
+        message: "完成状态必须包含最终文案",
+      });
+    }
+  });
+export type ProductPromotionAgentResponse = z.infer<typeof productPromotionAgentResponseSchema>;
+
+export const productPromotionTurnInputSchema = z.object({
+  requestId: z.uuid(),
+  sessionId: z.uuid(),
+  messages: z.array(chatMessageSchema).max(100).default([]),
+  answer: productPromotionAnswerSchema,
+});
+export type ProductPromotionTurnInput = z.infer<typeof productPromotionTurnInputSchema>;
+
+export const productPromotionAgentApiTurnResultSchema = z.object({
+  response: productPromotionAgentResponseSchema,
+  userMessage: z.string().min(1).max(100_000),
+  assistantMessage: z.string().min(1).max(100_000),
+});
+export type ProductPromotionAgentApiTurnResult = z.infer<
+  typeof productPromotionAgentApiTurnResultSchema
+>;
+
+export const platformContentPlatformSchema = z.enum(["bilibili", "zhihu"]);
+export type PlatformContentPlatform = z.infer<typeof platformContentPlatformSchema>;
+
+export const platformContentGenerateInputSchema = z.object({
+  requestId: z.uuid(),
+  sessionId: z.uuid(),
+  projectId: projectIdSchema,
+  platform: platformContentPlatformSchema,
+  productConversation: z.array(chatMessageSchema).max(100),
+  productDraft: z.string().trim().min(1).max(100_000),
+});
+export type PlatformContentGenerateInput = z.infer<typeof platformContentGenerateInputSchema>;
+
+export const platformContentResultSchema = z.object({
+  platform: platformContentPlatformSchema,
+  title: z.string().trim().min(1).max(80),
+  content: z.string().trim().min(1).max(100_000),
+});
+export type PlatformContentResult = z.infer<typeof platformContentResultSchema>;
+
+export const productPromotionContextSchema = z.object({
+  version: z.literal(1),
+  projectId: projectIdSchema,
+  platform: platformContentPlatformSchema,
+  productConversation: z.array(chatMessageSchema).max(100),
+  productDraft: z.string().trim().min(1).max(100_000),
+  generatedContent: platformContentResultSchema.nullable(),
+  updatedAt: z.iso.datetime({ offset: true }),
+});
+export type ProductPromotionContext = z.infer<typeof productPromotionContextSchema>;
+
 export const personaFlowTurnInputSchema = z
   .object({
     userMessage: z.string().trim().min(1).max(20_000),
@@ -399,15 +525,24 @@ export type LocalPublishImage = z.infer<typeof localPublishImageSchema>;
 export const publishDraftImageReferenceSchema = localPublishImageSchema.omit({ previewUrl: true });
 export type PublishDraftImageReference = z.infer<typeof publishDraftImageReferenceSchema>;
 
+export const publishDraftPlatformVariantSchema = z.object({
+  platform: platformSchema,
+  title: z.string().max(80),
+  content: z.string().max(100_000),
+});
+export type PublishDraftPlatformVariant = z.infer<typeof publishDraftPlatformVariantSchema>;
+
 export const publishDraftSchema = z.object({
   id: z.uuid(),
   title: z.string().max(80),
   platform: platformSchema.nullable(),
   bilibiliAccountId: z.uuid().nullable(),
+  zhihuAccountId: z.uuid().nullable().optional(),
   content: z.string().max(100_000),
   images: z.array(localPublishImageSchema).max(20),
   source: z.enum(["manual", "generated"]),
   pinned: z.boolean(),
+  platformVariants: z.array(publishDraftPlatformVariantSchema).max(6).optional(),
 });
 export type PublishDraft = z.infer<typeof publishDraftSchema>;
 
@@ -466,6 +601,22 @@ export const bilibiliFillInputSchema = z.object({
   autoPublish: z.boolean().default(false),
 });
 export type BilibiliFillInput = z.infer<typeof bilibiliFillInputSchema>;
+
+export const zhihuAccountSchema = z.object({
+  id: z.uuid(),
+  name: z.string().trim().min(1).max(40),
+});
+export type ZhihuAccount = z.infer<typeof zhihuAccountSchema>;
+export const deleteZhihuAccountInputSchema = z.object({
+  accountId: z.uuid(),
+});
+export const zhihuFillInputSchema = z.object({
+  accountId: z.uuid(),
+  title: z.string().trim().min(1).max(80),
+  content: z.string().trim().min(1).max(100_000),
+  imageIds: z.array(z.uuid()).max(20),
+});
+export type ZhihuFillInput = z.infer<typeof zhihuFillInputSchema>;
 
 export const publishAutomationResultSchema = z.object({
   state: z.enum(["waiting_for_login", "filled", "published", "needs_attention"]),
@@ -548,6 +699,12 @@ export interface DesktopApi {
     start(): Promise<PersonaFlowState>;
     turn(input: PersonaFlowTurnInput): Promise<PersonaFlowTurnResult>;
   };
+  productPromotion: {
+    turn(input: ProductPromotionTurnInput): Promise<ProductPromotionAgentApiTurnResult>;
+  };
+  platformContent: {
+    generate(input: PlatformContentGenerateInput): Promise<PlatformContentResult>;
+  };
   files: {
     listOutputs(projectId: string): Promise<Artifact[]>;
     preview(projectId: string, path: string): Promise<FilePreview>;
@@ -572,6 +729,11 @@ export interface DesktopApi {
     deleteBilibiliAccount(accountId: string): Promise<BilibiliAccount[]>;
     openBilibili(input: BilibiliFillInput): Promise<PublishAutomationResult>;
     fillBilibili(input: BilibiliFillInput): Promise<PublishAutomationResult>;
+    listZhihuAccounts?(): Promise<ZhihuAccount[]>;
+    createZhihuAccount?(): Promise<ZhihuAccount>;
+    deleteZhihuAccount?(accountId: string): Promise<ZhihuAccount[]>;
+    openZhihu?(input: ZhihuFillInput): Promise<PublishAutomationResult>;
+    fillZhihu?(input: ZhihuFillInput): Promise<PublishAutomationResult>;
   };
 }
 
@@ -593,6 +755,8 @@ export const ipcChannels = {
   personaFlowLoad: "persona-flow:load",
   personaFlowStart: "persona-flow:start",
   personaFlowTurn: "persona-flow:turn",
+  productPromotionTurn: "product-promotion:turn",
+  platformContentGenerate: "platform-content:generate",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",
@@ -611,4 +775,9 @@ export const ipcChannels = {
   publishBilibiliAccountDelete: "publish:bilibili-account-delete",
   publishBilibiliOpen: "publish:bilibili-open",
   publishBilibiliFill: "publish:bilibili-fill",
+  publishZhihuAccountsList: "publish:zhihu-accounts-list",
+  publishZhihuAccountCreate: "publish:zhihu-account-create",
+  publishZhihuAccountDelete: "publish:zhihu-account-delete",
+  publishZhihuOpen: "publish:zhihu-open",
+  publishZhihuFill: "publish:zhihu-fill",
 } as const;

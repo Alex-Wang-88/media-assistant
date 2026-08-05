@@ -87,6 +87,122 @@ class ChatRequest(BaseModel):
         return self
 
 
+class ProductPromotionAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    selected_options: list[str] = Field(
+        default_factory=list,
+        alias="selectedOptions",
+        max_length=8,
+    )
+    custom_input: str = Field(default="", alias="customInput", max_length=20_000)
+    skipped: bool = False
+    ranked: bool = False
+
+    @model_validator(mode="after")
+    def require_answer(self) -> "ProductPromotionAnswer":
+        if not self.skipped and not self.selected_options and not self.custom_input.strip():
+            raise ValueError("必须选择选项、填写内容或跳过当前问题")
+        return self
+
+
+class ProductPromotionTurnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    request_id: UUID = Field(alias="requestId")
+    session_id: UUID = Field(alias="sessionId")
+    messages: list[ChatMessage] = Field(default_factory=list, max_length=100)
+    answer: ProductPromotionAnswer
+    reference_context: str | None = Field(
+        default=None,
+        alias="referenceContext",
+        max_length=50_000,
+    )
+
+
+class ProductPromotionOption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=200)
+
+
+class ProductPromotionAgentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    status: Literal["questioning", "completed"]
+    question_id: str | None = Field(default=None, alias="questionId", max_length=80)
+    question: str | None = Field(default=None, min_length=1, max_length=500)
+    selection_mode: Literal["single", "multiple", "text"] | None = Field(
+        default=None,
+        alias="selectionMode",
+    )
+    options: list[ProductPromotionOption] = Field(default_factory=list, max_length=8)
+    max_selections: int | None = Field(
+        default=None,
+        alias="maxSelections",
+        ge=1,
+        le=8,
+    )
+    rank_selections: bool = Field(default=False, alias="rankSelections")
+    allow_custom_input: bool = Field(default=True, alias="allowCustomInput")
+    allow_skip: bool = Field(default=True, alias="allowSkip")
+    final_content: str | None = Field(
+        default=None,
+        alias="finalContent",
+        min_length=1,
+        max_length=100_000,
+    )
+
+    @model_validator(mode="after")
+    def require_status_content(self) -> "ProductPromotionAgentResponse":
+        if self.status == "questioning":
+            if self.question_id is None or self.question is None or self.selection_mode is None:
+                raise ValueError("问询状态必须包含问题编号、问题和选择模式")
+            if self.selection_mode != "text" and len(self.options) < 2:
+                raise ValueError("单选或多选问题必须提供至少两个选项")
+            if self.selection_mode == "text" and not self.allow_custom_input:
+                raise ValueError("文本问题必须允许手动输入")
+            if self.rank_selections and self.selection_mode != "multiple":
+                raise ValueError("只有多选问题可以要求优先级排序")
+            if self.rank_selections and (self.max_selections or 0) < 2:
+                raise ValueError("优先级多选必须设置至少两个最大选择项")
+        if self.status == "completed" and self.final_content is None:
+            raise ValueError("完成状态必须包含最终文案")
+        return self
+
+
+class ProductPromotionAgentApiTurnResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    response: ProductPromotionAgentResponse
+    user_message: str = Field(alias="userMessage", min_length=1, max_length=100_000)
+    assistant_message: str = Field(alias="assistantMessage", min_length=1, max_length=100_000)
+
+
+class PlatformContentGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    request_id: UUID = Field(alias="requestId")
+    session_id: UUID = Field(alias="sessionId")
+    project_id: UUID = Field(alias="projectId")
+    platform: Literal[Platform.BILIBILI, Platform.ZHIHU]
+    persona_rag: str = Field(alias="personaRag", min_length=1, max_length=50_000)
+    product_conversation: list[ChatMessage] = Field(
+        alias="productConversation",
+        max_length=100,
+    )
+    product_draft: str = Field(alias="productDraft", min_length=1, max_length=100_000)
+
+
+class PlatformContentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal[Platform.BILIBILI, Platform.ZHIHU]
+    title: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=100_000)
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

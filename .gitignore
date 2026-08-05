@@ -28,12 +28,15 @@ Thumbs.db
 
 # Tooling / agent state
 .workbuddy/
-
-# Local-only remote Agent prompts
-docs/persona-agent-prompts.md
+.yoom/
 
 # Private platform login cookies and sessions
 private-platform-sessions/
 
 # Local-only platform DOM inspection scripts and output
 .local-platform-tools/
+
+# Desktop packaging output
+.build/
+release/
+*.spec

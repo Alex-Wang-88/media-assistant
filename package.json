@@ -10,6 +10,8 @@
     "dev": "node scripts/dev.mjs",
     "dev:desktop": "pnpm --filter @yoom/desktop dev",
     "build": "pnpm --filter @yoom/desktop build",
+    "bundle:api:mac" : "uv run --directory apps/api pyinstaller --noconfirm --clean --onefile --name yoom-api --paths . --collect-submodules app --collect-submodules uvicorn packaged_main.py",
+    "dist:mac" : "pnpm bundle:api:mac && pnpm --filter @yoom/desktop build && pnpm --filter @yoom/desktop dist:mac && node scripts/collect-mac-artifact.mjs",
     "check": "biome check . && pnpm typecheck",
     "typecheck": "tsc -p packages/desktop-contracts && tsc -p packages/markdown-schemas && tsc -p packages/tag-ontology && tsc -p apps/desktop",
     "test": "vitest run",

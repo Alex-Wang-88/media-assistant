@@ -1,4 +1,5 @@
 import json
+from asyncio import sleep
 from collections.abc import AsyncIterator
 from typing import Protocol
 from uuid import uuid4
@@ -55,12 +56,14 @@ class YunbloomShareClient:
         url: str,
         api_key: str,
         client: httpx.AsyncClient | None = None,
+        max_transport_retries: int = 0,
     ) -> None:
         if not url or not api_key:
             raise ValueError("沄荣共享 API 地址和 Key 均不能为空")
         self._url = url
         self._api_key = api_key
         self._client = client
+        self._max_transport_retries = max(0, max_transport_retries)
 
     async def complete(
         self,
@@ -84,19 +87,25 @@ class YunbloomShareClient:
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=httpx.Timeout(90.0, connect=10.0))
         try:
-            response = await client.post(
-                self._url,
-                headers={
-                    "Authorization": self._api_key,
-                    "Accept": "text/event-stream",
-                    "Accept-Encoding": "identity",
-                },
-                json=body,
-            )
-            response.raise_for_status()
-            return parse_share_sse(response.text)
+            for attempt in range(self._max_transport_retries + 1):
+                try:
+                    response = await client.post(
+                        self._url,
+                        headers={
+                            "Authorization": self._api_key,
+                            "Accept": "text/event-stream",
+                            "Accept-Encoding": "identity",
+                        },
+                        json=body,
+                    )
+                    response.raise_for_status()
+                    return parse_share_sse(response.text)
+                except httpx.TransportError:
+                    if attempt >= self._max_transport_retries:
+                        raise
+                    await sleep(0.35)
         except httpx.HTTPError as error:
-            raise ProviderResponseError(f"沄荣共享 API 请求失败：{error}") from error
+            raise ProviderResponseError(_http_error_message(error)) from error
         finally:
             if owns_client:
                 await client.aclose()
@@ -145,7 +154,7 @@ class YunbloomShareClient:
             if not emitted:
                 raise ProviderResponseError("沄荣共享 API 未返回文本或工具调用")
         except httpx.HTTPError as error:
-            raise ProviderResponseError(f"沄荣共享 API 请求失败：{error}") from error
+            raise ProviderResponseError(_http_error_message(error)) from error
         finally:
             if owns_client:
                 await client.aclose()
@@ -191,6 +200,20 @@ def parse_share_sse(source: str) -> SharedCompletion:
         cost=cost,
         completion_id=completion_id,
     )
+
+
+def _http_error_message(error: httpx.HTTPError) -> str:
+    error_type = type(error).__name__
+    if isinstance(error, httpx.HTTPStatusError):
+        response = error.response
+        return (
+            "沄荣共享 API 请求失败"
+            f"（HTTP {response.status_code} {response.reason_phrase}，{error_type}）"
+        )
+    detail = str(error).strip()
+    if detail:
+        return f"沄荣共享 API 请求失败（{error_type}）：{detail}"
+    return f"沄荣共享 API 请求失败（{error_type}）"
 
 
 def parse_share_stream_data(raw: str) -> list[ChatProviderEvent]:

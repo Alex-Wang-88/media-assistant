@@ -7,6 +7,7 @@ import {
   chatSendInputSchema,
   createProjectInputSchema,
   deleteBilibiliAccountInputSchema,
+  deleteZhihuAccountInputSchema,
   deleteProjectInputSchema,
   fileActionInputSchema,
   ipcChannels,
@@ -14,6 +15,8 @@ import {
   listOutputsInputSchema,
   persistedPublishDraftStateSchema,
   personaFlowTurnInputSchema,
+  platformContentGenerateInputSchema,
+  productPromotionTurnInputSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
   personaRagSaveDocumentInputSchema,
@@ -22,6 +25,7 @@ import {
   publishStartInputSchema,
   releasePublishImagesInputSchema,
   selectPublishImagesInputSchema,
+  zhihuFillInputSchema,
 } from "@yoom/desktop-contracts";
 import {
   BrowserWindow,
@@ -38,7 +42,20 @@ import {
   listBilibiliAccounts,
   openAndFillBilibili,
 } from "./bilibili-publisher";
-import { getAgentStatus, streamChat, turnPersonaAgent } from "./chat-client";
+import {
+  continueFillingZhihu,
+  createZhihuAccount,
+  deleteZhihuAccount,
+  listZhihuAccounts,
+  openAndFillZhihu,
+} from "./zhihu-publisher";
+import {
+  getAgentStatus,
+  generatePlatformContent,
+  streamChat,
+  turnPersonaAgent,
+  turnProductPromotionAgent,
+} from "./chat-client";
 import {
   applyPersonaAgentTurnResponse,
   buildPersonaAgentTurnRequest,
@@ -227,6 +244,35 @@ export function registerIpc(access: WorkspaceAccess): void {
     workspace.savePersonaFlow(next);
     return { flow: next, response };
   });
+  ipcMain.handle(ipcChannels.productPromotionTurn, async (_event, raw) => {
+    const input = productPromotionTurnInputSchema.parse(raw);
+    const referenceContext =
+      input.messages.length === 0 ? requireWorkspace(access).personaRagReferenceContext() : null;
+    return turnProductPromotionAgent({ ...input, referenceContext });
+  });
+  ipcMain.handle(ipcChannels.platformContentGenerate, async (_event, raw) => {
+    const input = platformContentGenerateInputSchema.parse(raw);
+    const workspace = requireWorkspace(access);
+    const personaRag = workspace.personaRagReferenceContext();
+    if (!personaRag.trim()) throw new Error("本地用户画像内容为空，无法生成平台文案");
+    const baseContext = {
+      version: 1 as const,
+      projectId: input.projectId,
+      platform: input.platform,
+      productConversation: input.productConversation,
+      productDraft: input.productDraft,
+      generatedContent: null,
+      updatedAt: new Date().toISOString(),
+    };
+    workspace.saveProductPromotionContext(baseContext);
+    const result = await generatePlatformContent({ ...input, personaRag });
+    workspace.saveProductPromotionContext({
+      ...baseContext,
+      generatedContent: result,
+      updatedAt: new Date().toISOString(),
+    });
+    return result;
+  });
   ipcMain.handle(ipcChannels.filesListOutputs, (_event, raw) => {
     const input = listOutputsInputSchema.parse(raw);
     return requireWorkspace(access).listOutputs(input.projectId);
@@ -354,6 +400,30 @@ export function registerIpc(access: WorkspaceAccess): void {
       input.content,
       resolveSelectedPublishImages(input.imageIds),
       input.autoPublish,
+    );
+  });
+  ipcMain.handle(ipcChannels.publishZhihuAccountsList, () => listZhihuAccounts());
+  ipcMain.handle(ipcChannels.publishZhihuAccountCreate, () => createZhihuAccount());
+  ipcMain.handle(ipcChannels.publishZhihuAccountDelete, async (_event, raw) => {
+    const input = deleteZhihuAccountInputSchema.parse(raw);
+    return deleteZhihuAccount(input.accountId);
+  });
+  ipcMain.handle(ipcChannels.publishZhihuOpen, async (_event, raw) => {
+    const input = zhihuFillInputSchema.parse(raw);
+    return openAndFillZhihu(
+      input.accountId,
+      input.title,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
+    );
+  });
+  ipcMain.handle(ipcChannels.publishZhihuFill, async (_event, raw) => {
+    const input = zhihuFillInputSchema.parse(raw);
+    return continueFillingZhihu(
+      input.accountId,
+      input.title,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
     );
   });
 }

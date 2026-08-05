@@ -16,10 +16,15 @@ import type {
   PersonaRagDroppedFile,
   PersonaRagImportResult,
   PersonaRagStatus,
+  PlatformContentGenerateInput,
+  PlatformContentResult,
+  ProductPromotionAgentApiTurnResult,
+  ProductPromotionTurnInput,
   Project,
   PublishAutomationResult,
   PublishDraftState,
   WorkspaceEntry,
+  ZhihuAccount,
 } from "@yoom/desktop-contracts";
 import { contextBridge, ipcRenderer } from "electron";
 import { createChatEventGate } from "./chat-event";
@@ -42,6 +47,8 @@ const channels = {
   personaFlowLoad: "persona-flow:load",
   personaFlowStart: "persona-flow:start",
   personaFlowTurn: "persona-flow:turn",
+  productPromotionTurn: "product-promotion:turn",
+  platformContentGenerate: "platform-content:generate",
   filesListOutputs: "files:list-outputs",
   filesPreview: "files:preview",
   filesOpen: "files:open",
@@ -60,6 +67,11 @@ const channels = {
   publishBilibiliAccountDelete: "publish:bilibili-account-delete",
   publishBilibiliOpen: "publish:bilibili-open",
   publishBilibiliFill: "publish:bilibili-fill",
+  publishZhihuAccountsList: "publish:zhihu-accounts-list",
+  publishZhihuAccountCreate: "publish:zhihu-account-create",
+  publishZhihuAccountDelete: "publish:zhihu-account-delete",
+  publishZhihuOpen: "publish:zhihu-open",
+  publishZhihuFill: "publish:zhihu-fill",
 } as const;
 
 function expectString(value: unknown): string {
@@ -160,6 +172,18 @@ const api: DesktopApi = {
         .invoke(channels.personaFlowTurn, input)
         .then((value: unknown) => expectObject<PersonaFlowTurnResult>(value)),
   },
+  productPromotion: {
+    turn: (input: ProductPromotionTurnInput) =>
+      ipcRenderer
+        .invoke(channels.productPromotionTurn, input)
+        .then((value: unknown) => expectObject<ProductPromotionAgentApiTurnResult>(value)),
+  },
+  platformContent: {
+    generate: (input: PlatformContentGenerateInput) =>
+      ipcRenderer
+        .invoke(channels.platformContentGenerate, input)
+        .then((value: unknown) => expectObject<PlatformContentResult>(value)),
+  },
   files: {
     listOutputs: (projectId) =>
       ipcRenderer
@@ -233,6 +257,26 @@ const api: DesktopApi = {
     fillBilibili: (input) =>
       ipcRenderer
         .invoke(channels.publishBilibiliFill, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    listZhihuAccounts: () =>
+      ipcRenderer
+        .invoke(channels.publishZhihuAccountsList)
+        .then((value: unknown) => expectArray<ZhihuAccount>(value)),
+    createZhihuAccount: () =>
+      ipcRenderer
+        .invoke(channels.publishZhihuAccountCreate)
+        .then((value: unknown) => expectObject<ZhihuAccount>(value)),
+    deleteZhihuAccount: (accountId) =>
+      ipcRenderer
+        .invoke(channels.publishZhihuAccountDelete, { accountId })
+        .then((value: unknown) => expectArray<ZhihuAccount>(value)),
+    openZhihu: (input) =>
+      ipcRenderer
+        .invoke(channels.publishZhihuOpen, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    fillZhihu: (input) =>
+      ipcRenderer
+        .invoke(channels.publishZhihuFill, input)
         .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
   },
 };
