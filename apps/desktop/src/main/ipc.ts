@@ -7,6 +7,7 @@ import {
   chatSendInputSchema,
   createProjectInputSchema,
   deleteBilibiliAccountInputSchema,
+  deleteZhihuAccountInputSchema,
   deleteProjectInputSchema,
   fileActionInputSchema,
   ipcChannels,
@@ -24,6 +25,7 @@ import {
   publishStartInputSchema,
   releasePublishImagesInputSchema,
   selectPublishImagesInputSchema,
+  zhihuFillInputSchema,
 } from "@yoom/desktop-contracts";
 import {
   BrowserWindow,
@@ -40,6 +42,13 @@ import {
   listBilibiliAccounts,
   openAndFillBilibili,
 } from "./bilibili-publisher";
+import {
+  continueFillingZhihu,
+  createZhihuAccount,
+  deleteZhihuAccount,
+  listZhihuAccounts,
+  openAndFillZhihu,
+} from "./zhihu-publisher";
 import {
   getAgentStatus,
   generatePlatformContent,
@@ -391,6 +400,30 @@ export function registerIpc(access: WorkspaceAccess): void {
       input.content,
       resolveSelectedPublishImages(input.imageIds),
       input.autoPublish,
+    );
+  });
+  ipcMain.handle(ipcChannels.publishZhihuAccountsList, () => listZhihuAccounts());
+  ipcMain.handle(ipcChannels.publishZhihuAccountCreate, () => createZhihuAccount());
+  ipcMain.handle(ipcChannels.publishZhihuAccountDelete, async (_event, raw) => {
+    const input = deleteZhihuAccountInputSchema.parse(raw);
+    return deleteZhihuAccount(input.accountId);
+  });
+  ipcMain.handle(ipcChannels.publishZhihuOpen, async (_event, raw) => {
+    const input = zhihuFillInputSchema.parse(raw);
+    return openAndFillZhihu(
+      input.accountId,
+      input.title,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
+    );
+  });
+  ipcMain.handle(ipcChannels.publishZhihuFill, async (_event, raw) => {
+    const input = zhihuFillInputSchema.parse(raw);
+    return continueFillingZhihu(
+      input.accountId,
+      input.title,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
     );
   });
 }

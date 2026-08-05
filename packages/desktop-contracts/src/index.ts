@@ -527,6 +527,7 @@ export const publishDraftSchema = z.object({
   title: z.string().max(80),
   platform: platformSchema.nullable(),
   bilibiliAccountId: z.uuid().nullable(),
+  zhihuAccountId: z.uuid().nullable().optional(),
   content: z.string().max(100_000),
   images: z.array(localPublishImageSchema).max(20),
   source: z.enum(["manual", "generated"]),
@@ -589,6 +590,22 @@ export const bilibiliFillInputSchema = z.object({
   autoPublish: z.boolean().default(false),
 });
 export type BilibiliFillInput = z.infer<typeof bilibiliFillInputSchema>;
+
+export const zhihuAccountSchema = z.object({
+  id: z.uuid(),
+  name: z.string().trim().min(1).max(40),
+});
+export type ZhihuAccount = z.infer<typeof zhihuAccountSchema>;
+export const deleteZhihuAccountInputSchema = z.object({
+  accountId: z.uuid(),
+});
+export const zhihuFillInputSchema = z.object({
+  accountId: z.uuid(),
+  title: z.string().trim().min(1).max(80),
+  content: z.string().trim().min(1).max(100_000),
+  imageIds: z.array(z.uuid()).max(20),
+});
+export type ZhihuFillInput = z.infer<typeof zhihuFillInputSchema>;
 
 export const publishAutomationResultSchema = z.object({
   state: z.enum(["waiting_for_login", "filled", "published", "needs_attention"]),
@@ -701,6 +718,11 @@ export interface DesktopApi {
     deleteBilibiliAccount(accountId: string): Promise<BilibiliAccount[]>;
     openBilibili(input: BilibiliFillInput): Promise<PublishAutomationResult>;
     fillBilibili(input: BilibiliFillInput): Promise<PublishAutomationResult>;
+    listZhihuAccounts?(): Promise<ZhihuAccount[]>;
+    createZhihuAccount?(): Promise<ZhihuAccount>;
+    deleteZhihuAccount?(accountId: string): Promise<ZhihuAccount[]>;
+    openZhihu?(input: ZhihuFillInput): Promise<PublishAutomationResult>;
+    fillZhihu?(input: ZhihuFillInput): Promise<PublishAutomationResult>;
   };
 }
 
@@ -742,4 +764,9 @@ export const ipcChannels = {
   publishBilibiliAccountDelete: "publish:bilibili-account-delete",
   publishBilibiliOpen: "publish:bilibili-open",
   publishBilibiliFill: "publish:bilibili-fill",
+  publishZhihuAccountsList: "publish:zhihu-accounts-list",
+  publishZhihuAccountCreate: "publish:zhihu-account-create",
+  publishZhihuAccountDelete: "publish:zhihu-account-delete",
+  publishZhihuOpen: "publish:zhihu-open",
+  publishZhihuFill: "publish:zhihu-fill",
 } as const;

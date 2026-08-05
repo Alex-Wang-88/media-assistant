@@ -24,6 +24,7 @@ import type {
   PublishAutomationResult,
   PublishDraftState,
   WorkspaceEntry,
+  ZhihuAccount,
 } from "@yoom/desktop-contracts";
 import { contextBridge, ipcRenderer } from "electron";
 import { createChatEventGate } from "./chat-event";
@@ -66,6 +67,11 @@ const channels = {
   publishBilibiliAccountDelete: "publish:bilibili-account-delete",
   publishBilibiliOpen: "publish:bilibili-open",
   publishBilibiliFill: "publish:bilibili-fill",
+  publishZhihuAccountsList: "publish:zhihu-accounts-list",
+  publishZhihuAccountCreate: "publish:zhihu-account-create",
+  publishZhihuAccountDelete: "publish:zhihu-account-delete",
+  publishZhihuOpen: "publish:zhihu-open",
+  publishZhihuFill: "publish:zhihu-fill",
 } as const;
 
 function expectString(value: unknown): string {
@@ -251,6 +257,26 @@ const api: DesktopApi = {
     fillBilibili: (input) =>
       ipcRenderer
         .invoke(channels.publishBilibiliFill, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    listZhihuAccounts: () =>
+      ipcRenderer
+        .invoke(channels.publishZhihuAccountsList)
+        .then((value: unknown) => expectArray<ZhihuAccount>(value)),
+    createZhihuAccount: () =>
+      ipcRenderer
+        .invoke(channels.publishZhihuAccountCreate)
+        .then((value: unknown) => expectObject<ZhihuAccount>(value)),
+    deleteZhihuAccount: (accountId) =>
+      ipcRenderer
+        .invoke(channels.publishZhihuAccountDelete, { accountId })
+        .then((value: unknown) => expectArray<ZhihuAccount>(value)),
+    openZhihu: (input) =>
+      ipcRenderer
+        .invoke(channels.publishZhihuOpen, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    fillZhihu: (input) =>
+      ipcRenderer
+        .invoke(channels.publishZhihuFill, input)
         .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
   },
 };
