@@ -2651,6 +2651,135 @@ svg {
   font-size: 8px;
 }
 
+.publish-zhihu-editor {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 15px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+}
+
+.publish-zhihu-editor > header,
+.publish-zhihu-block > header,
+.publish-zhihu-image-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.publish-zhihu-editor > header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.publish-zhihu-editor > header strong,
+.publish-zhihu-block > header strong {
+  font-size: 10px;
+}
+
+.publish-zhihu-editor > header small,
+.publish-zhihu-editor > header > span {
+  color: var(--text-dim);
+  font-size: 8px;
+}
+
+.publish-zhihu-blocks,
+.publish-zhihu-block-row {
+  display: grid;
+  gap: 8px;
+}
+
+.publish-zhihu-block {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  background: var(--bg-element);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+
+.publish-zhihu-block > header > span {
+  display: flex;
+  gap: 5px;
+}
+
+.publish-zhihu-block button,
+.publish-zhihu-insert,
+.publish-zhihu-add-text {
+  padding: 6px 9px;
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.publish-zhihu-block button:disabled,
+.publish-zhihu-insert:disabled,
+.publish-zhihu-add-text:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.publish-zhihu-insert {
+  justify-self: center;
+  padding: 5px 12px;
+  color: var(--accent);
+  background: transparent;
+  border-style: dashed;
+}
+
+.publish-zhihu-block.text > textarea {
+  min-height: 130px;
+  resize: vertical;
+}
+
+.publish-zhihu-image-block {
+  align-items: stretch;
+}
+
+.publish-zhihu-image-block > img {
+  width: 132px;
+  min-height: 100px;
+  object-fit: cover;
+  background: var(--bg-elevated);
+  border-radius: 7px;
+}
+
+.publish-zhihu-image-block > label {
+  position: relative;
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.publish-zhihu-image-block textarea {
+  min-height: 100px;
+  padding-bottom: 22px;
+  resize: vertical;
+}
+
+.publish-zhihu-image-block label > small {
+  position: absolute;
+  right: 8px;
+  bottom: 7px;
+  color: var(--text-dim);
+  font-size: 8px;
+}
+
+.publish-zhihu-add-text {
+  justify-self: stretch;
+  padding: 9px;
+  color: var(--accent);
+  border-style: dashed;
+}
+
 .publish-assets {
   margin-top: 22px;
   padding: 15px;
@@ -2761,13 +2890,20 @@ svg {
 }
 
 .publish-automation-result {
+  box-sizing: border-box;
   display: grid;
   gap: 6px;
+  height: 74px;
   margin-top: 14px;
   padding: 12px;
+  overflow: auto;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.publish-automation-result.empty {
+  visibility: hidden;
 }
 
 .publish-automation-result.filled,

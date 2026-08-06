@@ -525,10 +525,29 @@ export type LocalPublishImage = z.infer<typeof localPublishImageSchema>;
 export const publishDraftImageReferenceSchema = localPublishImageSchema.omit({ previewUrl: true });
 export type PublishDraftImageReference = z.infer<typeof publishDraftImageReferenceSchema>;
 
+export const zhihuTextBlockSchema = z.object({
+  id: z.uuid(),
+  type: z.literal("text"),
+  content: z.string().max(100_000),
+});
+export const zhihuImageBlockSchema = z.object({
+  id: z.uuid(),
+  type: z.literal("image"),
+  imageId: z.uuid(),
+  caption: z.string().max(140),
+});
+export const zhihuContentBlockSchema = z.discriminatedUnion("type", [
+  zhihuTextBlockSchema,
+  zhihuImageBlockSchema,
+]);
+export type ZhihuContentBlock = z.infer<typeof zhihuContentBlockSchema>;
+
 export const publishDraftPlatformVariantSchema = z.object({
   platform: platformSchema,
   title: z.string().max(80),
   content: z.string().max(100_000),
+  images: z.array(localPublishImageSchema).max(20).default([]),
+  zhihuBlocks: z.array(zhihuContentBlockSchema).max(200).optional(),
 });
 export type PublishDraftPlatformVariant = z.infer<typeof publishDraftPlatformVariantSchema>;
 
@@ -543,11 +562,17 @@ export const publishDraftSchema = z.object({
   source: z.enum(["manual", "generated"]),
   pinned: z.boolean(),
   platformVariants: z.array(publishDraftPlatformVariantSchema).max(6).optional(),
+  zhihuBlocks: z.array(zhihuContentBlockSchema).max(200).optional(),
 });
 export type PublishDraft = z.infer<typeof publishDraftSchema>;
 
+export const persistedPublishDraftPlatformVariantSchema = publishDraftPlatformVariantSchema.extend({
+  images: z.array(publishDraftImageReferenceSchema).max(20).default([]),
+});
+
 export const persistedPublishDraftSchema = publishDraftSchema.extend({
   images: z.array(publishDraftImageReferenceSchema).max(20),
+  platformVariants: z.array(persistedPublishDraftPlatformVariantSchema).max(6).optional(),
 });
 export type PersistedPublishDraft = z.infer<typeof persistedPublishDraftSchema>;
 
@@ -583,7 +608,7 @@ export const selectPublishImagesInputSchema = z.object({
   remaining: z.number().int().min(1).max(20),
 });
 export const releasePublishImagesInputSchema = z.object({
-  ids: z.array(z.uuid()).max(20),
+  ids: z.array(z.uuid()).max(120),
 });
 export const bilibiliAccountSchema = z.object({
   id: z.uuid(),
@@ -613,8 +638,7 @@ export const deleteZhihuAccountInputSchema = z.object({
 export const zhihuFillInputSchema = z.object({
   accountId: z.uuid(),
   title: z.string().trim().min(1).max(80),
-  content: z.string().trim().min(1).max(100_000),
-  imageIds: z.array(z.uuid()).max(20),
+  blocks: z.array(zhihuContentBlockSchema).min(1).max(200),
 });
 export type ZhihuFillInput = z.infer<typeof zhihuFillInputSchema>;
 

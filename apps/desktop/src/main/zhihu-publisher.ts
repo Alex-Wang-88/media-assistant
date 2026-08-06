@@ -1,16 +1,10 @@
 import { randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PublishAutomationResult, ZhihuAccount } from "@yoom/desktop-contracts";
 import { app, BrowserWindow, session } from "electron";
 import {
+  appendTextWithSystemShortcut,
   chooseFileInSystemDialog,
   replaceTextWithSystemShortcut,
   waitForSystemFileDialog,
@@ -34,24 +28,26 @@ type ZhihuIdentity = {
   name: string;
 };
 
+export type ZhihuPublishBlock =
+  | { type: "text"; content: string }
+  | { type: "image"; path: string; caption: string };
+
 export async function openAndFillZhihu(
   accountId: string,
   title: string,
-  content: string,
-  assetPaths: readonly string[],
+  blocks: readonly ZhihuPublishBlock[],
 ): Promise<PublishAutomationResult> {
   const window = await openZhihuWindow(accountId);
-  return fillZhihuWindow(window, title, content, assetPaths);
+  return fillZhihuWindow(window, title, blocks);
 }
 
 export async function continueFillingZhihu(
   accountId: string,
   title: string,
-  content: string,
-  assetPaths: readonly string[],
+  blocks: readonly ZhihuPublishBlock[],
 ): Promise<PublishAutomationResult> {
   const window = await openZhihuWindow(accountId, false);
-  return fillZhihuWindow(window, title, content, assetPaths);
+  return fillZhihuWindow(window, title, blocks);
 }
 
 export async function listZhihuAccounts(): Promise<ZhihuAccount[]> {
@@ -309,10 +305,12 @@ async function clearZhihuAccountSession(account: StoredZhihuAccount): Promise<vo
 async function fillZhihuWindow(
   window: BrowserWindow,
   title: string,
-  content: string,
-  assetPaths: readonly string[],
+  blocks: readonly ZhihuPublishBlock[],
 ): Promise<PublishAutomationResult> {
-  if (!title.trim() || !content.trim()) {
+  const hasContent = blocks.some(
+    (block) => block.type === "image" || (block.type === "text" && block.content.trim()),
+  );
+  if (!title.trim() || !hasContent) {
     return {
       state: "needs_attention",
       message: "知乎文章需要同时填写标题和正文。",
@@ -336,20 +334,34 @@ async function fillZhihuWindow(
       message: "标题已填入，但没有识别到知乎文章正文编辑区。",
     };
   }
-  await replaceFocusedText(window, content);
+  await replaceFocusedText(window, "");
 
-  if (assetPaths.length > 0 && !(await insertZhihuImages(window, assetPaths))) {
-    return {
-      state: "needs_attention",
-      message: `标题和正文已填入；${assetPaths.length} 张配图没有全部完成上传或插入，请保留知乎窗口并检查插图区域。`,
-    };
+  let insertedContent = false;
+  for (const block of blocks) {
+    if (block.type === "text") {
+      if (!block.content.trim()) continue;
+      if (!(await placeZhihuBodyCaretAtEnd(window))) {
+        return { state: "needs_attention", message: "无法继续定位知乎正文末尾。" };
+      }
+      await appendFocusedText(window, `${insertedContent ? "\n\n" : ""}${block.content}`);
+      insertedContent = true;
+      continue;
+    }
+    if (!(await insertZhihuImage(window, block.path, block.caption))) {
+      return {
+        state: "needs_attention",
+        message:
+          "标题和前序内容已填入；有一张配图没有完成上传或插入，请保留知乎窗口并检查插图区域。",
+      };
+    }
+    insertedContent = true;
   }
 
   window.show();
   window.focus();
   return {
     state: "filled",
-    message: "标题、正文和配图已填入知乎文章编辑器，已停在发布操作之前。",
+    message: "标题、段落和配图已按草稿顺序填入知乎文章编辑器，已停在发布操作之前。",
   };
 }
 
@@ -382,13 +394,21 @@ async function replaceFocusedText(window: BrowserWindow, content: string): Promi
   await delay(200);
 }
 
-async function insertZhihuImages(
+async function appendFocusedText(window: BrowserWindow, content: string): Promise<void> {
+  if (process.platform === "darwin") app.focus({ steal: true });
+  window.show();
+  window.moveTop();
+  window.focus();
+  await delay(150);
+  await appendTextWithSystemShortcut(content);
+  await delay(200);
+}
+
+async function insertZhihuImage(
   window: BrowserWindow,
-  paths: readonly string[],
+  path: string,
+  caption: string,
 ): Promise<boolean> {
-  if (paths.length === 0) return true;
-  const path = paths[0];
-  if (!path) return false;
   if (!(await placeZhihuBodyCaretAtEnd(window))) return false;
   const previousCount = await countZhihuBodyImages(window);
   const clicked = await clickZhihuImageControl(window);
@@ -402,9 +422,70 @@ async function insertZhihuImages(
 
   for (let attempt = 0; attempt < 60; attempt += 1) {
     await delay(500);
-    if ((await countZhihuBodyImages(window)) >= previousCount + 1) return true;
+    if ((await countZhihuBodyImages(window)) >= previousCount + 1) {
+      if (caption.trim()) {
+        await fillLatestZhihuImageCaption(
+          window,
+          Array.from(caption.trim()).slice(0, 140).join(""),
+        );
+      }
+      return true;
+    }
   }
   return false;
+}
+
+async function fillLatestZhihuImageCaption(window: BrowserWindow, caption: string): Promise<void> {
+  const selectors = ZHIHU_SELECTORS.body;
+  const findPointScript = `(() => {
+    const selectors = ${JSON.stringify(selectors)};
+    const editor = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+    if (!editor) return null;
+    const captions = Array.from(editor.querySelectorAll("figure[data-block='true'] figcaption.Image-captionV2"))
+      .filter((caption) => {
+        const rect = caption.getBoundingClientRect();
+        const style = getComputedStyle(caption);
+        return rect.width > 0 && rect.height > 0 &&
+          style.display !== "none" && style.visibility !== "hidden";
+      });
+    const element = captions.at(-1);
+    if (!element) return null;
+    element.scrollIntoView({ block: "center", inline: "nearest" });
+    const rect = element.getBoundingClientRect();
+    return {
+      x: Math.round(rect.left + rect.width / 2),
+      y: Math.round(rect.top + rect.height / 2),
+    };
+  })()`;
+  let point: { x: number; y: number } | null = null;
+  try {
+    point = (await window.webContents.mainFrame.executeJavaScript(findPointScript, true)) as {
+      x: number;
+      y: number;
+    } | null;
+  } catch {
+    return;
+  }
+  if (!point) return;
+
+  window.webContents.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
+  window.webContents.sendInputEvent({
+    type: "mouseDown",
+    button: "left",
+    clickCount: 1,
+    x: point.x,
+    y: point.y,
+  });
+  await delay(60);
+  window.webContents.sendInputEvent({
+    type: "mouseUp",
+    button: "left",
+    clickCount: 1,
+    x: point.x,
+    y: point.y,
+  });
+  await delay(150);
+  await appendFocusedText(window, caption);
 }
 
 async function waitForAndClickZhihuSingleImage(window: BrowserWindow): Promise<boolean> {
@@ -535,21 +616,95 @@ async function findZhihuLocalImageUploadPoint(
 
 async function placeZhihuBodyCaretAtEnd(window: BrowserWindow): Promise<boolean> {
   const selectors = ZHIHU_SELECTORS.body;
-  const script = `(() => {
+  const findPointScript = `(() => {
+    const selectors = ${JSON.stringify(selectors)};
+    const editor = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
+    if (!editor) return null;
+    const blocks = Array.from(editor.querySelectorAll("[data-block='true']"));
+    const editableBlocks = blocks.filter((block) => {
+      if (block.getAttribute("contenteditable") === "false") return false;
+      if (block.closest("figure[contenteditable='false']")) return false;
+      const rect = block.getBoundingClientRect();
+      const style = getComputedStyle(block);
+      return rect.width > 0 && rect.height > 0 &&
+        style.display !== "none" && style.visibility !== "hidden";
+    });
+    const block = editableBlocks.at(-1);
+    if (!block) return null;
+    block.scrollIntoView({ block: "center", inline: "nearest" });
+    const rect = block.getBoundingClientRect();
+    return {
+      x: Math.round(rect.left + Math.min(12, rect.width / 2)),
+      y: Math.round(rect.top + rect.height / 2),
+    };
+  })()`;
+  const placeCaretScript = `(() => {
     const selectors = ${JSON.stringify(selectors)};
     const editor = selectors.map((selector) => document.querySelector(selector)).find(Boolean);
     if (!editor) return false;
+    const blocks = Array.from(editor.querySelectorAll("[data-block='true']"));
+    const editableBlocks = blocks.filter((block) => {
+      if (block.getAttribute("contenteditable") === "false") return false;
+      if (block.closest("figure[contenteditable='false']")) return false;
+      const rect = block.getBoundingClientRect();
+      const style = getComputedStyle(block);
+      return rect.width > 0 && rect.height > 0 &&
+        style.display !== "none" && style.visibility !== "hidden";
+    });
+    const block = editableBlocks.at(-1);
+    if (!block) return false;
+    const target = block.querySelector("[data-text='true']") ||
+      block.querySelector(".public-DraftStyleDefault-block") || block;
     editor.focus();
     const selection = window.getSelection();
     if (!selection) return false;
     const range = document.createRange();
-    range.selectNodeContents(editor);
+    range.selectNodeContents(target);
     range.collapse(false);
     selection.removeAllRanges();
     selection.addRange(range);
-    return true;
+    return editor.contains(selection.anchorNode);
   })()`;
-  return executeInFrames(window, script);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let point: { x: number; y: number } | null = null;
+    try {
+      point = (await window.webContents.mainFrame.executeJavaScript(findPointScript, true)) as {
+        x: number;
+        y: number;
+      } | null;
+    } catch {
+      point = null;
+    }
+    if (!point) {
+      await delay(100);
+      continue;
+    }
+
+    if (process.platform === "darwin") app.focus({ steal: true });
+    window.show();
+    window.moveTop();
+    window.focus();
+    window.webContents.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
+    window.webContents.sendInputEvent({
+      type: "mouseDown",
+      button: "left",
+      clickCount: 1,
+      x: point.x,
+      y: point.y,
+    });
+    await delay(60);
+    window.webContents.sendInputEvent({
+      type: "mouseUp",
+      button: "left",
+      clickCount: 1,
+      x: point.x,
+      y: point.y,
+    });
+    await delay(100);
+    if (await executeInFrames(window, placeCaretScript)) return true;
+    await delay(100);
+  }
+  return false;
 }
 
 async function clickZhihuImageControl(window: BrowserWindow): Promise<boolean> {

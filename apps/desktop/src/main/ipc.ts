@@ -7,24 +7,25 @@ import {
   chatSendInputSchema,
   createProjectInputSchema,
   deleteBilibiliAccountInputSchema,
-  deleteZhihuAccountInputSchema,
   deleteProjectInputSchema,
+  deleteZhihuAccountInputSchema,
   fileActionInputSchema,
   ipcChannels,
   knowledgeSearchInputSchema,
   listOutputsInputSchema,
   persistedPublishDraftStateSchema,
   personaFlowTurnInputSchema,
-  platformContentGenerateInputSchema,
-  productPromotionTurnInputSchema,
   personaRagConfirmInputSchema,
   personaRagDroppedFilesSchema,
   personaRagSaveDocumentInputSchema,
+  platformContentGenerateInputSchema,
   previewFileInputSchema,
+  productPromotionTurnInputSchema,
   publishDraftStateSchema,
   publishStartInputSchema,
   releasePublishImagesInputSchema,
   selectPublishImagesInputSchema,
+  type ZhihuContentBlock,
   zhihuFillInputSchema,
 } from "@yoom/desktop-contracts";
 import {
@@ -43,15 +44,8 @@ import {
   openAndFillBilibili,
 } from "./bilibili-publisher";
 import {
-  continueFillingZhihu,
-  createZhihuAccount,
-  deleteZhihuAccount,
-  listZhihuAccounts,
-  openAndFillZhihu,
-} from "./zhihu-publisher";
-import {
-  getAgentStatus,
   generatePlatformContent,
+  getAgentStatus,
   streamChat,
   turnPersonaAgent,
   turnProductPromotionAgent,
@@ -68,6 +62,14 @@ import {
   normalizePersonaAgentTurnResponse,
 } from "./persona-flow";
 import type { Workspace } from "./workspace";
+import {
+  continueFillingZhihu,
+  createZhihuAccount,
+  deleteZhihuAccount,
+  listZhihuAccounts,
+  openAndFillZhihu,
+  type ZhihuPublishBlock,
+} from "./zhihu-publisher";
 
 type WorkspaceAccess = {
   current(): Workspace | null;
@@ -332,6 +334,15 @@ export function registerIpc(access: WorkspaceAccess): void {
           selectedPublishImages.set(restored.id, restored.path);
           return [restored];
         }),
+        platformVariants: draft.platformVariants?.map((variant) => ({
+          ...variant,
+          images: variant.images.flatMap((image) => {
+            const restored = localPublishImage(image.path, image.id);
+            if (!restored) return [];
+            selectedPublishImages.set(restored.id, restored.path);
+            return [restored];
+          }),
+        })),
       })),
     });
   });
@@ -344,6 +355,12 @@ export function registerIpc(access: WorkspaceAccess): void {
         images: draft.images.flatMap(({ previewUrl: _previewUrl, ...image }) =>
           selectedPublishImages.get(image.id) === image.path ? [image] : [],
         ),
+        platformVariants: draft.platformVariants?.map((variant) => ({
+          ...variant,
+          images: variant.images.flatMap(({ previewUrl: _previewUrl, ...image }) =>
+            selectedPublishImages.get(image.id) === image.path ? [image] : [],
+          ),
+        })),
       })),
     });
     requireWorkspace(access).savePublishDrafts(stored);
@@ -410,20 +427,14 @@ export function registerIpc(access: WorkspaceAccess): void {
   });
   ipcMain.handle(ipcChannels.publishZhihuOpen, async (_event, raw) => {
     const input = zhihuFillInputSchema.parse(raw);
-    return openAndFillZhihu(
-      input.accountId,
-      input.title,
-      input.content,
-      resolveSelectedPublishImages(input.imageIds),
-    );
+    return openAndFillZhihu(input.accountId, input.title, resolveZhihuPublishBlocks(input.blocks));
   });
   ipcMain.handle(ipcChannels.publishZhihuFill, async (_event, raw) => {
     const input = zhihuFillInputSchema.parse(raw);
     return continueFillingZhihu(
       input.accountId,
       input.title,
-      input.content,
-      resolveSelectedPublishImages(input.imageIds),
+      resolveZhihuPublishBlocks(input.blocks),
     );
   });
 }
@@ -435,6 +446,21 @@ function resolveSelectedPublishImages(ids: readonly string[]): string[] {
       throw new Error("选中的本地图片已移动或删除，请重新选择");
     }
     return path;
+  });
+}
+
+function resolveZhihuPublishBlocks(blocks: readonly ZhihuContentBlock[]): ZhihuPublishBlock[] {
+  return blocks.map((block) => {
+    if (block.type === "text") {
+      return { type: "text", content: block.content };
+    }
+    const [path] = resolveSelectedPublishImages([block.imageId]);
+    if (!path) throw new Error("知乎配图路径无效，请重新选择");
+    return {
+      type: "image",
+      path,
+      caption: block.caption,
+    };
   });
 }
 

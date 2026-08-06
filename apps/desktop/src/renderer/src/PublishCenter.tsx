@@ -7,6 +7,7 @@ import type {
   PublishDraft,
   PublishDraftState,
   ZhihuAccount,
+  ZhihuContentBlock,
 } from "@yoom/desktop-contracts";
 import { useCallback, useEffect, useState } from "react";
 
@@ -69,6 +70,81 @@ function createDraft(patch: Partial<Omit<MemoryPublishDraft, "id">> = {}): Memor
     automationResult: null,
     ...patch,
   };
+}
+
+function contentToZhihuBlocks(content: string): ZhihuContentBlock[] {
+  const paragraphs = content
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  return (paragraphs.length > 0 ? paragraphs : [""]).map((paragraph) => ({
+    id: crypto.randomUUID(),
+    type: "text" as const,
+    content: paragraph,
+  }));
+}
+
+function legacyZhihuBlocks(
+  content: string,
+  images: readonly LocalPublishImage[],
+): ZhihuContentBlock[] {
+  return [
+    ...contentToZhihuBlocks(content),
+    ...images.map((image) => ({
+      id: crypto.randomUUID(),
+      type: "image" as const,
+      imageId: image.id,
+      caption: "",
+    })),
+  ];
+}
+
+function migrateLegacyZhihuDraft(draft: MemoryPublishDraft): MemoryPublishDraft {
+  let platformVariants = draft.platformVariants?.map((variant) =>
+    variant.platform === "zhihu" && !variant.zhihuBlocks
+      ? {
+          ...variant,
+          zhihuBlocks: legacyZhihuBlocks(variant.content, variant.images),
+        }
+      : variant,
+  );
+
+  if (draft.platform !== "zhihu" || draft.zhihuBlocks) {
+    return { ...draft, platformVariants };
+  }
+
+  const zhihuBlocks = legacyZhihuBlocks(draft.content, draft.images);
+  platformVariants = platformVariants?.map((variant) =>
+    variant.platform === "zhihu"
+      ? {
+          ...variant,
+          title: draft.title,
+          content: draft.content,
+          images: draft.images,
+          zhihuBlocks,
+        }
+      : variant,
+  );
+  return { ...draft, zhihuBlocks, platformVariants };
+}
+
+function zhihuBlocksToContent(blocks: readonly ZhihuContentBlock[]): string {
+  return blocks
+    .filter((block): block is Extract<ZhihuContentBlock, { type: "text" }> => block.type === "text")
+    .map((block) => block.content.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function uniqueDraftImageIds(draft: MemoryPublishDraft): string[] {
+  return [
+    ...new Set([
+      ...draft.images.map((image) => image.id),
+      ...(draft.platformVariants ?? []).flatMap((variant) =>
+        variant.images.map((image) => image.id),
+      ),
+    ]),
+  ];
 }
 
 export function PublishCenter({
@@ -140,6 +216,9 @@ export function PublishCenter({
               platform: entry.platform,
               title: entry.title || "Agent 生成内容",
               content: entry.content,
+              images: [],
+              zhihuBlocks:
+                entry.platform === "zhihu" ? contentToZhihuBlocks(entry.content) : undefined,
             },
           ]
         : [],
@@ -150,6 +229,7 @@ export function PublishCenter({
       platform: primary.platform ?? null,
       source: "generated",
       platformVariants,
+      zhihuBlocks: primary.platform === "zhihu" ? contentToZhihuBlocks(primary.content) : undefined,
     });
     setDrafts((current) => [generatedDraft, ...current]);
     setSelectedDraftId(generatedDraft.id);
@@ -171,10 +251,12 @@ export function PublishCenter({
       .loadDrafts()
       .then((state) => {
         if (cancelled) return;
-        const restoredDrafts = state?.drafts.map((draft) => ({
-          ...draft,
-          automationResult: null,
-        }));
+        const restoredDrafts = state?.drafts.map((draft) =>
+          migrateLegacyZhihuDraft({
+            ...draft,
+            automationResult: null,
+          }),
+        );
         const nextDrafts =
           restoredDrafts && restoredDrafts.length > 0 ? restoredDrafts : [createDraft()];
         const nextSelectedDraftId =
@@ -235,7 +317,10 @@ export function PublishCenter({
           draft.source !== "generated" ||
           !draft.platform ||
           !draft.platformVariants?.length ||
-          (!("title" in patch) && !("content" in patch))
+          (!("title" in patch) &&
+            !("content" in patch) &&
+            !("images" in patch) &&
+            !("zhihuBlocks" in patch))
         ) {
           return nextDraft;
         }
@@ -247,6 +332,8 @@ export function PublishCenter({
                   ...variant,
                   title: patch.title ?? draft.title,
                   content: patch.content ?? draft.content,
+                  images: patch.images ?? draft.images,
+                  zhihuBlocks: patch.zhihuBlocks ?? draft.zhihuBlocks,
                 }
               : variant,
           ),
@@ -263,6 +350,8 @@ export function PublishCenter({
             ...variant,
             title: selectedDraft.title,
             content: selectedDraft.content,
+            images: selectedDraft.images,
+            zhihuBlocks: selectedDraft.zhihuBlocks,
           }
         : variant,
     );
@@ -276,6 +365,8 @@ export function PublishCenter({
               platform,
               title: nextVariant.title,
               content: nextVariant.content,
+              images: nextVariant.images,
+              zhihuBlocks: platform === "zhihu" ? nextVariant.zhihuBlocks : undefined,
               bilibiliAccountId:
                 platform === "bilibili"
                   ? (draft.bilibiliAccountId ?? bilibiliAccounts[0]?.id ?? null)
@@ -304,6 +395,35 @@ export function PublishCenter({
         automationResult: null,
       });
       setNotice("已记录本地图片路径；不会复制或修改原图");
+      setError(null);
+    },
+    onError: (reason) => setError(readableError(reason)),
+  });
+
+  const selectZhihuImage = useMutation({
+    mutationFn: (insertionIndex: number) => {
+      if (!selectedDraft || selectedDraft.images.length >= 20) {
+        throw new Error("每份草稿最多选择 20 张图片");
+      }
+      return window.desktop.publish.selectImages(1).then((images) => ({ images, insertionIndex }));
+    },
+    onSuccess: ({ images, insertionIndex }) => {
+      const image = images[0];
+      if (!selectedDraft || !image) return;
+      const blocks = [...(selectedDraft.zhihuBlocks ?? [])];
+      blocks.splice(insertionIndex, 0, {
+        id: crypto.randomUUID(),
+        type: "image",
+        imageId: image.id,
+        caption: "",
+      });
+      updateSelectedDraft({
+        images: [...selectedDraft.images, image].slice(0, 20),
+        zhihuBlocks: blocks,
+        content: zhihuBlocksToContent(blocks),
+        automationResult: null,
+      });
+      setNotice("图片已插入当前位置；可选填不超过 140 字的图片注释");
       setError(null);
     },
     onError: (reason) => setError(readableError(reason)),
@@ -418,8 +538,7 @@ export function PublishCenter({
         return openZhihu({
           accountId: selectedDraft.zhihuAccountId,
           title: selectedDraft.title,
-          content: selectedDraft.content,
-          imageIds: selectedDraft.images.map((image) => image.id),
+          blocks: selectedDraft.zhihuBlocks ?? contentToZhihuBlocks(selectedDraft.content),
         });
       }
       throw new Error("当前平台尚未接入自由草稿填充");
@@ -437,6 +556,7 @@ export function PublishCenter({
   const busy =
     !draftsLoaded ||
     selectImages.isPending ||
+    selectZhihuImage.isPending ||
     openPlatform.isPending ||
     createBilibiliAccount.isPending ||
     deleteBilibiliAccount.isPending ||
@@ -490,7 +610,7 @@ export function PublishCenter({
   };
 
   const confirmDeleteDraft = async (draft: MemoryPublishDraft) => {
-    await window.desktop.publish.releaseImages(draft.images.map((image) => image.id));
+    await window.desktop.publish.releaseImages(uniqueDraftImageIds(draft));
     const remaining = drafts.filter((entry) => entry.id !== draft.id);
     const nextDrafts = remaining.length > 0 ? remaining : [createDraft()];
     setDrafts(nextDrafts);
@@ -511,6 +631,46 @@ export function PublishCenter({
     setNotice("已从当前草稿移除图片；原始文件未删除");
   };
 
+  const updateZhihuBlocks = (blocks: ZhihuContentBlock[]) => {
+    updateSelectedDraft({
+      zhihuBlocks: blocks,
+      content: zhihuBlocksToContent(blocks),
+      automationResult: null,
+    });
+    setNotice(null);
+  };
+
+  const removeZhihuBlock = (block: ZhihuContentBlock) => {
+    if (!selectedDraft) return;
+    const remainingBlocks = (selectedDraft.zhihuBlocks ?? []).filter(
+      (entry) => entry.id !== block.id,
+    );
+    updateZhihuBlocks(
+      remainingBlocks.length > 0
+        ? remainingBlocks
+        : [{ id: crypto.randomUUID(), type: "text", content: "" }],
+    );
+    if (block.type === "image") {
+      updateSelectedDraft({
+        images: selectedDraft.images.filter((image) => image.id !== block.imageId),
+        automationResult: null,
+      });
+      void window.desktop.publish.releaseImages([block.imageId]);
+      setNotice("已移除知乎插图；原始文件未删除");
+    }
+  };
+
+  const moveZhihuBlock = (blockIndex: number, offset: -1 | 1) => {
+    if (!selectedDraft) return;
+    const blocks = [...(selectedDraft.zhihuBlocks ?? [])];
+    const targetIndex = blockIndex + offset;
+    if (targetIndex < 0 || targetIndex >= blocks.length) return;
+    const [block] = blocks.splice(blockIndex, 1);
+    if (!block) return;
+    blocks.splice(targetIndex, 0, block);
+    updateZhihuBlocks(blocks);
+  };
+
   const clearCurrentDraft = async () => {
     if (!selectedDraft) return;
     await window.desktop.publish.releaseImages(selectedDraft.images.map((image) => image.id));
@@ -522,6 +682,10 @@ export function PublishCenter({
       zhihuAccountId: generated ? selectedDraft.zhihuAccountId : null,
       content: "",
       images: [],
+      zhihuBlocks:
+        selectedDraft.platform === "zhihu"
+          ? [{ id: crypto.randomUUID(), type: "text", content: "" }]
+          : undefined,
       source: selectedDraft.source,
       automationResult: null,
     });
@@ -743,6 +907,11 @@ export function PublishCenter({
                           platform === "zhihu"
                             ? (selectedDraft.zhihuAccountId ?? zhihuAccounts[0]?.id ?? null)
                             : null,
+                        zhihuBlocks:
+                          platform === "zhihu"
+                            ? (selectedDraft.zhihuBlocks ??
+                              legacyZhihuBlocks(selectedDraft.content, selectedDraft.images))
+                            : selectedDraft.zhihuBlocks,
                         automationResult: null,
                       });
                       setNotice(null);
@@ -945,77 +1114,207 @@ export function PublishCenter({
                   </em>
                 </label>
               </div>
-              <label className="publish-content-field">
-                推文内容
-                <textarea
-                  value={selectedDraft.content}
-                  maxLength={100_000}
-                  placeholder="可以直接输入任何想发布的内容…"
-                  onChange={(event) => {
-                    updateSelectedDraft({
-                      content: event.target.value,
-                      automationResult: null,
-                    });
-                    setNotice(null);
-                  }}
-                />
-                <small>{selectedDraft.content.length.toLocaleString()} 字</small>
-              </label>
-              <section className="publish-assets" aria-labelledby="publish-assets-title">
-                <header>
-                  <div>
-                    <strong id="publish-assets-title">本地配图</strong>
-                    <small>只记录原始路径和名称，不制作图片副本</small>
+              {selectedDraft.platform === "zhihu" ? (
+                <section className="publish-zhihu-editor" aria-labelledby="publish-zhihu-title">
+                  <header>
+                    <div>
+                      <strong id="publish-zhihu-title">知乎文章结构</strong>
+                      <small>段落与图片会按这里的顺序填入；图片注释为可选项</small>
+                    </div>
+                    <span>{selectedDraft.images.length}/20 张图片</span>
+                  </header>
+                  <div className="publish-zhihu-blocks">
+                    {(selectedDraft.zhihuBlocks ?? []).map((block, blockIndex, blocks) => {
+                      const image =
+                        block.type === "image"
+                          ? selectedDraft.images.find((entry) => entry.id === block.imageId)
+                          : null;
+                      return (
+                        <div className="publish-zhihu-block-row" key={block.id}>
+                          <button
+                            type="button"
+                            className="publish-zhihu-insert"
+                            disabled={busy || selectedDraft.images.length >= 20}
+                            onClick={() => selectZhihuImage.mutate(blockIndex)}
+                          >
+                            ＋ 在此处插入图片
+                          </button>
+                          <article className={`publish-zhihu-block ${block.type}`}>
+                            <header>
+                              <strong>
+                                {block.type === "text" ? "文字段落" : (image?.name ?? "本地图片")}
+                              </strong>
+                              <span>
+                                <button
+                                  type="button"
+                                  disabled={busy || blockIndex === 0}
+                                  onClick={() => moveZhihuBlock(blockIndex, -1)}
+                                >
+                                  上移
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busy || blockIndex === blocks.length - 1}
+                                  onClick={() => moveZhihuBlock(blockIndex, 1)}
+                                >
+                                  下移
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => removeZhihuBlock(block)}
+                                >
+                                  移除
+                                </button>
+                              </span>
+                            </header>
+                            {block.type === "text" ? (
+                              <textarea
+                                value={block.content}
+                                maxLength={100_000}
+                                placeholder="输入这一段正文…"
+                                onChange={(event) =>
+                                  updateZhihuBlocks(
+                                    blocks.map((entry) =>
+                                      entry.id === block.id && entry.type === "text"
+                                        ? { ...entry, content: event.target.value }
+                                        : entry,
+                                    ),
+                                  )
+                                }
+                              />
+                            ) : (
+                              <div className="publish-zhihu-image-block">
+                                {image ? <img src={image.previewUrl} alt="" /> : null}
+                                <label>
+                                  图片注释（可选）
+                                  <textarea
+                                    value={block.caption}
+                                    maxLength={140}
+                                    placeholder="添加图片注释，不超过 140 字…"
+                                    onChange={(event) =>
+                                      updateZhihuBlocks(
+                                        blocks.map((entry) =>
+                                          entry.id === block.id && entry.type === "image"
+                                            ? { ...entry, caption: event.target.value }
+                                            : entry,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  <small>{block.caption.length}/140</small>
+                                </label>
+                              </div>
+                            )}
+                          </article>
+                        </div>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      className="publish-zhihu-insert"
+                      disabled={busy || selectedDraft.images.length >= 20}
+                      onClick={() =>
+                        selectZhihuImage.mutate((selectedDraft.zhihuBlocks ?? []).length)
+                      }
+                    >
+                      ＋ 在末尾插入图片
+                    </button>
+                    <button
+                      type="button"
+                      className="publish-zhihu-add-text"
+                      disabled={busy}
+                      onClick={() => {
+                        const blocks = [
+                          ...(selectedDraft.zhihuBlocks ??
+                            legacyZhihuBlocks(selectedDraft.content, selectedDraft.images)),
+                          { id: crypto.randomUUID(), type: "text" as const, content: "" },
+                        ];
+                        updateZhihuBlocks(blocks);
+                      }}
+                    >
+                      ＋ 新增文字段落
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    disabled={busy || selectedDraft.images.length >= 20}
-                    onClick={() => selectImages.mutate()}
-                  >
-                    选择本地图片
-                  </button>
-                </header>
-                <div className="publish-asset-list">
-                  {selectedDraft.images.map((image, index) => (
-                    <div key={image.id} className="publish-image-item">
-                      <img src={image.previewUrl} alt="" />
-                      <span>
-                        <strong>
-                          {index + 1}. {image.name}
-                        </strong>
-                        <small title={image.path}>{image.path}</small>
-                      </span>
+                </section>
+              ) : (
+                <>
+                  <label className="publish-content-field">
+                    推文内容
+                    <textarea
+                      value={selectedDraft.content}
+                      maxLength={100_000}
+                      placeholder="可以直接输入任何想发布的内容…"
+                      onChange={(event) => {
+                        updateSelectedDraft({
+                          content: event.target.value,
+                          automationResult: null,
+                        });
+                        setNotice(null);
+                      }}
+                    />
+                    <small>{selectedDraft.content.length.toLocaleString()} 字</small>
+                  </label>
+                  <section className="publish-assets" aria-labelledby="publish-assets-title">
+                    <header>
+                      <div>
+                        <strong id="publish-assets-title">本地配图</strong>
+                        <small>图片会在正文之后统一上传，只记录原始路径和名称</small>
+                      </div>
                       <button
                         type="button"
-                        aria-label={`移除配图“${image.name}”`}
-                        disabled={busy}
-                        onClick={() => removeImage(image)}
+                        disabled={busy || selectedDraft.images.length >= 20}
+                        onClick={() => selectImages.mutate()}
                       >
-                        移除
+                        选择本地图片
                       </button>
+                    </header>
+                    <div className="publish-asset-list">
+                      {selectedDraft.images.map((image, index) => (
+                        <div key={image.id} className="publish-image-item">
+                          <img src={image.previewUrl} alt="" />
+                          <span>
+                            <strong>
+                              {index + 1}. {image.name}
+                            </strong>
+                            <small title={image.path}>{image.path}</small>
+                          </span>
+                          <button
+                            type="button"
+                            aria-label={`移除配图“${image.name}”`}
+                            disabled={busy}
+                            onClick={() => removeImage(image)}
+                          >
+                            移除
+                          </button>
+                        </div>
+                      ))}
+                      {selectedDraft.images.length === 0 ? <p>尚未选择配图</p> : null}
                     </div>
-                  ))}
-                  {selectedDraft.images.length === 0 ? <p>尚未选择配图</p> : null}
-                </div>
-              </section>
+                  </section>
+                </>
+              )}
               {error ? (
                 <p className="publish-editor-error" role="alert">
                   {error}
                 </p>
               ) : null}
               {notice ? <p className="publish-editor-notice">{notice}</p> : null}
-              {selectedDraft.automationResult ? (
-                <div
-                  className={`publish-automation-result ${selectedDraft.automationResult.state}`}
-                >
-                  <strong>
-                    {selectedDraft.automationResult.state === "published"
-                      ? "已自动发布"
-                      : "已完成自动填充"}
-                  </strong>
-                  <p>{selectedDraft.automationResult.message}</p>
-                </div>
-              ) : null}
+              <div
+                className={`publish-automation-result ${selectedDraft.automationResult?.state ?? "empty"}`}
+                aria-live="polite"
+              >
+                {selectedDraft.automationResult ? (
+                  <>
+                    <strong>
+                      {selectedDraft.automationResult.state === "published"
+                        ? "已自动发布"
+                        : "已完成自动填充"}
+                    </strong>
+                    <p>{selectedDraft.automationResult.message}</p>
+                  </>
+                ) : null}
+              </div>
               <footer className="publish-editor-actions">
                 {clearConfirm ? (
                   <span className="publish-clear-confirm">
