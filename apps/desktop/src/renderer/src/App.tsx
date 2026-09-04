@@ -1,39 +1,45 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
-  Artifact,
   ChatMessage,
   PersonaFlowState,
   PersonaRagConfirmInput,
   PersonaRagImportResult,
   PersonaStageOption,
-  Platform,
-  PlatformContentPlatform,
-  ProductPromotionAgentResponse,
-  ProductPromotionAnswer,
   Project,
 } from "@yoom/desktop-contracts";
 import { personaStageWelcome } from "@yoom/desktop-contracts";
 import {
-  memo,
   type DragEvent as ReactDragEvent,
-  type ReactNode,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { useWorkspaceQueries } from "./app/useWorkspaceQueries";
+import { WorkspaceFallback } from "./app/WorkspaceFallback";
+import { WorkspaceSidebar } from "./app/WorkspaceSidebar";
 import {
   applyAppearance,
   resolveAppearance,
   systemPrefersDark,
   watchSystemTheme,
 } from "./appearance";
+import { ArtifactPanel } from "./artifacts/ArtifactPanel";
 import { useChatScroll } from "./chat-scroll";
-import { applyChatEvent, type ConversationMessage, type ConversationToolCall } from "./chat-state";
+import { applyChatEvent, type ConversationMessage } from "./chat-state";
+import { ContentTypePicker } from "./content/ContentTypePicker";
+import { ProductPlatformPicker } from "./content/ProductPlatformPicker";
+import { ProductQuestionCard } from "./content/ProductQuestionCard";
+import { useContentFlowController } from "./content/useContentFlowController";
+import { ChatBubble } from "./conversation/ChatBubble";
+import { ChatComposer } from "./conversation/ChatComposer";
 import { PublishCenter, type PublishCenterSeed } from "./PublishCenter";
+import { PersonaDeleteDialog } from "./persona/PersonaDeleteDialog";
+import { PersonaDocumentEditor } from "./persona/PersonaDocumentEditor";
+import { PersonaFlowView } from "./persona/PersonaFlowView";
+import { PersonaOnboardingCard } from "./persona/PersonaOnboardingCard";
+import { parsePersonaReport, personaSetupMessage } from "./persona/persona-report";
 import { loadPersonaTranscript, savePersonaTranscript } from "./persona-transcript";
 import { SettingsPanel } from "./SettingsPanel";
 import { useUiStore } from "./store";
@@ -41,68 +47,6 @@ import { useUiStore } from "./store";
 function required<T>(value: T | null, message: string): T {
   if (value === null) throw new Error(message);
   return value;
-}
-
-function personaSetupMessage(
-  role: ConversationMessage["role"],
-  content: string,
-  modelExcluded = false,
-): ConversationMessage {
-  return {
-    id: crypto.randomUUID(),
-    role,
-    content,
-    status: "complete",
-    tools: [],
-    ...(modelExcluded ? { modelExcluded: true } : {}),
-  };
-}
-
-const PERSONA_REPORT_SECTIONS = [
-  "你卖什么",
-  "内容核心定位",
-  "内容反向定位",
-  "卖给谁",
-  "目标客户",
-  "核心优势",
-  "核心转化目标",
-  "辅助转化目标",
-] as const;
-
-type ContentAgentType = "product_promotion" | "company_pr";
-
-const PRODUCT_PLATFORM_OPTIONS: Array<{
-  id: Platform;
-  label: string;
-  description: string;
-  enabled: boolean;
-}> = [
-  { id: "bilibili", label: "哔哩哔哩", description: "生成 B 站动态标题和正文", enabled: true },
-  { id: "wechat", label: "微信公众号", description: "平台 Agent 暂未接入", enabled: false },
-  { id: "toutiao", label: "今日头条", description: "平台 Agent 暂未接入", enabled: false },
-  { id: "zhihu", label: "知乎", description: "生成知乎文章标题和正文", enabled: true },
-  { id: "weibo", label: "微博", description: "平台 Agent 暂未接入", enabled: false },
-  { id: "xiaohongshu", label: "小红书", description: "平台 Agent 暂未接入", enabled: false },
-];
-
-const CONTENT_AGENT_WELCOME: Record<ContentAgentType, string> = {
-  product_promotion:
-    "你好，接下来请告诉我本次想推广的产品是什么。可以先从产品名称、主要卖点或活动信息开始。",
-  company_pr:
-    "你好，接下来请告诉我这次公司软文想表达的主题。可以是品牌故事、企业动态、公司理念或其他方向。",
-};
-
-function isProductContentPlatform(platform: Platform): platform is PlatformContentPlatform {
-  return platform === "bilibili" || platform === "zhihu";
-}
-
-function parsePersonaReport(source: string): string | null {
-  const content = source.trim();
-  const matchedSections = PERSONA_REPORT_SECTIONS.filter((section) =>
-    new RegExp(`(^|\\n)\\s*(?:#{1,6}\\s*)?${section}\\s*(?:\\n|$)`, "m").test(content),
-  );
-  if (matchedSections.length < 6 || !matchedSections.includes("核心转化目标")) return null;
-  return content.startsWith("# ") ? content : `# 用户画像\n\n${content}`;
 }
 
 export function App() {
@@ -131,20 +75,8 @@ export function App() {
   const [personaDropActive, setPersonaDropActive] = useState(false);
   const [personaDeleteConfirm, setPersonaDeleteConfirm] = useState(false);
   const [personaDeleteError, setPersonaDeleteError] = useState<string | null>(null);
-  const [contentAgentType, setContentAgentType] = useState<ContentAgentType | null>(null);
-  const contentAgentSessionId = useRef<string | null>(null);
-  const [productAgentMessages, setProductAgentMessages] = useState<ChatMessage[]>([]);
-  const [productAgentResponse, setProductAgentResponse] =
-    useState<ProductPromotionAgentResponse | null>(null);
-  const [productSelectedOptionIds, setProductSelectedOptionIds] = useState<string[]>([]);
-  const [productCustomInput, setProductCustomInput] = useState("");
-  const [productTargetPlatforms, setProductTargetPlatforms] = useState<PlatformContentPlatform[]>(
-    [],
-  );
-  const [productPlatformSelectionConfirmed, setProductPlatformSelectionConfirmed] = useState(false);
   const [publishCenterOpen, setPublishCenterOpen] = useState(false);
   const [publishCenterSeed, setPublishCenterSeed] = useState<PublishCenterSeed[] | null>(null);
-  const skipNextProjectReset = useRef(false);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const activeScrollItems = useMemo(
     () =>
@@ -164,48 +96,47 @@ export function App() {
     handleThumbPointerMove,
     handleThumbPointerUp,
   } = useChatScroll(activeScrollItems);
-  const workspace = useQuery({
-    queryKey: ["workspace"],
-    queryFn: () => window.desktop.workspace.current(),
+  const {
+    contentAgentType,
+    productAgentResponse,
+    productSelectedOptionIds,
+    productCustomInput,
+    setProductCustomInput,
+    productTargetPlatforms,
+    productPlatformSelectionConfirmed,
+    selectContentAgent,
+    toggleProductPlatform,
+    confirmProductPlatforms,
+    returnToProductPlatformPicker,
+    returnToContentTypePicker,
+    resetForProjectChange,
+    preserveForNextProjectChange,
+    sendProductPromotionAnswer,
+    toggleProductOption,
+    submitProductAnswer,
+    skipProductQuestion,
+  } = useContentFlowController({
+    selectedProjectId: ui.selectedProjectId,
+    selectProject: ui.selectProject,
+    conversationMessages,
+    setConversationMessages,
+    isStreaming,
+    setIsStreaming,
+    setMessage,
+    requestLatestMessage,
+    cancelLatestMessage,
+    setAgentRequestFailed,
+    openPublishCenter: (seed) => {
+      setPublishCenterSeed(seed);
+      setPublishCenterOpen(true);
+    },
+    focusComposer: () => requestAnimationFrame(() => messageInputRef.current?.focus()),
   });
-  const workspaces = useQuery({
-    queryKey: ["workspaces"],
-    queryFn: () => window.desktop.workspace.list(),
-  });
-  const personaRag = useQuery({
-    queryKey: ["persona-rag", workspace.data],
-    queryFn: () => window.desktop.personaRag.status(),
-    enabled: Boolean(workspace.data),
-    retry: false,
-    refetchInterval: 1_000,
-  });
-  const agentStatus = useQuery({
-    queryKey: ["agent-status"],
-    queryFn: () => window.desktop.chat.status(),
-    enabled: Boolean(workspace.data),
-    retry: false,
-    refetchInterval: 10_000,
-  });
-  const projects = useQuery({
-    queryKey: ["projects", workspace.data],
-    queryFn: () => window.desktop.tasks.list(),
-    enabled: Boolean(workspace.data),
-  });
-  const artifacts = useQuery({
-    queryKey: ["artifacts", ui.selectedProjectId],
-    queryFn: () => window.desktop.files.listOutputs(required(ui.selectedProjectId, "未选择任务")),
-    enabled: Boolean(ui.selectedProjectId),
-    refetchInterval: 2_000,
-  });
-  const preview = useQuery({
-    queryKey: ["preview", ui.selectedProjectId, ui.selectedArtifactPath],
-    queryFn: () =>
-      window.desktop.files.preview(
-        required(ui.selectedProjectId, "未选择任务"),
-        required(ui.selectedArtifactPath, "未选择生成物"),
-      ),
-    enabled: Boolean(ui.selectedProjectId && ui.selectedArtifactPath),
-  });
+  const { workspace, workspaces, personaRag, agentStatus, projects, artifacts, preview } =
+    useWorkspaceQueries({
+      selectedProjectId: ui.selectedProjectId,
+      selectedArtifactPath: ui.selectedArtifactPath,
+    });
   const createTask = useMutation({
     mutationFn: () => window.desktop.tasks.create({ name: taskName }),
     onSuccess: async (project) => {
@@ -548,79 +479,6 @@ export function App() {
     requestLatestMessage(true);
   };
 
-  const selectContentAgent = (type: ContentAgentType) => {
-    contentAgentSessionId.current = type === "product_promotion" ? null : crypto.randomUUID();
-    setProductAgentMessages([]);
-    setProductAgentResponse(null);
-    setProductSelectedOptionIds([]);
-    setProductCustomInput("");
-    setProductTargetPlatforms([]);
-    setProductPlatformSelectionConfirmed(false);
-    setContentAgentType(type);
-    setConversationMessages(
-      type === "product_promotion"
-        ? []
-        : [personaSetupMessage("assistant", CONTENT_AGENT_WELCOME[type], true)],
-    );
-    setMessage("");
-    if (type !== "product_promotion") {
-      requestAnimationFrame(() => messageInputRef.current?.focus());
-    }
-  };
-
-  const toggleProductPlatform = (platform: Platform) => {
-    if (
-      !isProductContentPlatform(platform) ||
-      !PRODUCT_PLATFORM_OPTIONS.some((option) => option.id === platform && option.enabled)
-    ) {
-      return;
-    }
-    setProductTargetPlatforms((current) =>
-      current.includes(platform)
-        ? current.filter((candidate) => candidate !== platform)
-        : [...current, platform],
-    );
-  };
-
-  const confirmProductPlatforms = () => {
-    if (productTargetPlatforms.length === 0) return;
-    contentAgentSessionId.current = crypto.randomUUID();
-    setProductPlatformSelectionConfirmed(true);
-    setConversationMessages([
-      personaSetupMessage("assistant", CONTENT_AGENT_WELCOME.product_promotion, true),
-    ]);
-    setMessage("");
-    requestAnimationFrame(() => messageInputRef.current?.focus());
-  };
-
-  const returnToProductPlatformPicker = () => {
-    cancelLatestMessage();
-    contentAgentSessionId.current = null;
-    setProductAgentMessages([]);
-    setProductAgentResponse(null);
-    setProductSelectedOptionIds([]);
-    setProductCustomInput("");
-    setProductPlatformSelectionConfirmed(false);
-    setConversationMessages([]);
-    setMessage("");
-    setAgentRequestFailed(false);
-  };
-
-  const returnToContentTypePicker = () => {
-    cancelLatestMessage();
-    contentAgentSessionId.current = null;
-    setProductAgentMessages([]);
-    setProductAgentResponse(null);
-    setProductSelectedOptionIds([]);
-    setProductCustomInput("");
-    setProductTargetPlatforms([]);
-    setProductPlatformSelectionConfirmed(false);
-    setContentAgentType(null);
-    setConversationMessages([]);
-    setMessage("");
-    setAgentRequestFailed(false);
-  };
-
   function continuePersonaSetupAfterImport(names: string[]) {
     const prompt =
       `我刚添加了这些本地参考资料：${names.join("、")}。` +
@@ -693,206 +551,8 @@ export function App() {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: switching projects must clear the active transcript
   useEffect(() => {
-    if (skipNextProjectReset.current) {
-      skipNextProjectReset.current = false;
-      return;
-    }
-    setConversationMessages([]);
-    setContentAgentType(null);
-    contentAgentSessionId.current = null;
-    setProductAgentMessages([]);
-    setProductAgentResponse(null);
-    setProductSelectedOptionIds([]);
-    setProductCustomInput("");
-    setProductTargetPlatforms([]);
-    setProductPlatformSelectionConfirmed(false);
-    setMessage("");
-    setIsStreaming(false);
-    cancelLatestMessage();
+    resetForProjectChange();
   }, [ui.selectedProjectId]);
-
-  const sendProductPromotionAnswer = async (
-    answer: ProductPromotionAnswer,
-    visibleAnswer: string,
-  ) => {
-    const sessionId = contentAgentSessionId.current;
-    const targetPlatforms = productTargetPlatforms;
-    if (!sessionId || targetPlatforms.length === 0 || isStreaming) return;
-    const assistantId = crypto.randomUUID();
-    const previousResponse = productAgentResponse;
-    const userEntry = personaSetupMessage("user", visibleAnswer);
-    const assistantEntry: ConversationMessage = {
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      status: "streaming",
-      tools: [],
-    };
-    requestLatestMessage();
-    setConversationMessages((current) => [...current, userEntry, assistantEntry]);
-    setProductAgentResponse(null);
-    setMessage("");
-    setIsStreaming(true);
-    try {
-      let projectId = ui.selectedProjectId;
-      if (!projectId) {
-        const project = await window.desktop.tasks.create({
-          name: visibleAnswer.split(/\r?\n/, 1)[0]?.slice(0, 40) || "产品推广",
-        });
-        projectId = project.id;
-        skipNextProjectReset.current = true;
-        ui.selectProject(project.id);
-        await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      }
-      const result = await window.desktop.productPromotion.turn({
-        requestId: crypto.randomUUID(),
-        sessionId,
-        messages: productAgentMessages,
-        answer,
-      });
-      const nextProductAgentMessages: ChatMessage[] = [
-        ...productAgentMessages,
-        { role: "user", content: result.userMessage },
-        { role: "assistant", content: result.assistantMessage },
-      ];
-      setProductAgentMessages(nextProductAgentMessages);
-      setProductSelectedOptionIds([]);
-      setProductCustomInput("");
-      if (result.response.status === "completed") {
-        const productDraft = result.response.finalContent ?? "";
-        const productConversation: ChatMessage[] = [
-          ...conversationMessages
-            .filter(
-              (entry) =>
-                !entry.modelExcluded && entry.status === "complete" && entry.content.trim(),
-            )
-            .map((entry) => ({ role: entry.role, content: entry.content })),
-          { role: "user", content: visibleAnswer },
-        ];
-        setConversationMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? {
-                  ...entry,
-                  content: `正在生成${targetPlatforms
-                    .map(
-                      (platform) =>
-                        PRODUCT_PLATFORM_OPTIONS.find((option) => option.id === platform)?.label ??
-                        platform,
-                    )
-                    .join("、")}文案…`,
-                  status: "streaming",
-                }
-              : entry,
-          ),
-        );
-        const platformResults = await Promise.all(
-          targetPlatforms.map((platform) =>
-            window.desktop.platformContent.generate({
-              requestId: crypto.randomUUID(),
-              sessionId: crypto.randomUUID(),
-              projectId,
-              platform,
-              productConversation,
-              productDraft,
-            }),
-          ),
-        );
-        setPublishCenterSeed(
-          platformResults.map((platformResult) => ({
-            key: crypto.randomUUID(),
-            title: platformResult.title,
-            content: platformResult.content,
-            platform: platformResult.platform,
-          })),
-        );
-        setPublishCenterOpen(true);
-        setProductAgentResponse(null);
-        setConversationMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? { ...entry, content: "", hidden: true, status: "complete" }
-              : entry,
-          ),
-        );
-        setAgentRequestFailed(false);
-        return;
-      }
-      setProductAgentResponse(result.response);
-      const assistantContent = result.response.question ?? "请继续补充产品信息。";
-      setConversationMessages((current) =>
-        current.map((entry) =>
-          entry.id === assistantId
-            ? { ...entry, content: assistantContent, status: "complete" }
-            : entry,
-        ),
-      );
-      setAgentRequestFailed(false);
-      requestLatestMessage(true);
-    } catch (error) {
-      setProductAgentResponse(previousResponse);
-      setAgentRequestFailed(true);
-      const errorMessage = readableError(error);
-      setConversationMessages((current) =>
-        current.map((entry) =>
-          entry.id === assistantId ? { ...entry, status: "error", error: errorMessage } : entry,
-        ),
-      );
-    } finally {
-      setIsStreaming(false);
-    }
-  };
-
-  const toggleProductOption = (optionId: string) => {
-    if (!productAgentResponse || productAgentResponse.selectionMode === "text") return;
-    setProductSelectedOptionIds((current) => {
-      if (productAgentResponse.selectionMode === "single") {
-        return current.includes(optionId) ? [] : [optionId];
-      }
-      const maxSelections =
-        productAgentResponse.maxSelections ?? productAgentResponse.options.length;
-      if (!current.includes(optionId) && current.length >= maxSelections) {
-        return current;
-      }
-      return current.includes(optionId)
-        ? current.filter((id) => id !== optionId)
-        : [...current, optionId];
-    });
-  };
-
-  const submitProductAnswer = () => {
-    if (!productAgentResponse || productAgentResponse.status !== "questioning") return;
-    const selectedOptions = productSelectedOptionIds
-      .map(
-        (optionId) => productAgentResponse.options.find((option) => option.id === optionId)?.label,
-      )
-      .filter((label): label is string => Boolean(label));
-    const customInput = productCustomInput.trim();
-    if (selectedOptions.length === 0 && !customInput) return;
-    const displayedSelections = productAgentResponse.rankSelections
-      ? selectedOptions.map((label, index) => `${index + 1}. ${label}`)
-      : selectedOptions;
-    const visibleAnswer = [...displayedSelections, ...(customInput ? [customInput] : [])].join(
-      "；",
-    );
-    void sendProductPromotionAnswer(
-      {
-        selectedOptions,
-        customInput,
-        skipped: false,
-        ranked: productAgentResponse.rankSelections,
-      },
-      visibleAnswer,
-    );
-  };
-
-  const skipProductQuestion = () => {
-    if (!productAgentResponse?.allowSkip) return;
-    void sendProductPromotionAnswer(
-      { selectedOptions: [], customInput: "", skipped: true, ranked: false },
-      "跳过当前问题",
-    );
-  };
 
   const sendMessage = async () => {
     if (personaSetupOpen) {
@@ -940,7 +600,7 @@ export function App() {
           name: prompt.split(/\r?\n/, 1)[0]?.slice(0, 40) || "新对话",
         });
         projectId = project.id;
-        skipNextProjectReset.current = true;
+        preserveForNextProjectChange();
         ui.selectProject(project.id);
         await queryClient.invalidateQueries({ queryKey: ["projects"] });
       }
@@ -1001,18 +661,10 @@ export function App() {
       ? readableError(workspace.error)
       : workspaceActionError;
     return (
-      <main className="onboarding">
-        <div className="brand-mark">沄</div>
-        <h1>获客智能助手</h1>
-        <p>
-          {initializationError
-            ? `工作区连接失败：${initializationError}`
-            : "默认工作区初始化失败。你可以选择一个本地目录继续使用。"}
-        </p>
-        <button type="button" className="primary" onClick={() => void chooseWorkspace()}>
-          选择工作区
-        </button>
-      </main>
+      <WorkspaceFallback
+        error={initializationError ?? null}
+        onChooseWorkspace={() => void chooseWorkspace()}
+      />
     );
   }
 
@@ -1035,222 +687,57 @@ export function App() {
       className={personaOnboardingActive ? "shell persona-onboarding" : "shell"}
       aria-label={personaOnboardingActive ? "用户画像首次引导" : undefined}
     >
-      <aside
-        className="sidebar"
-        aria-hidden={personaOnboardingActive}
-        inert={personaOnboardingActive ? true : undefined}
-      >
-        <div className="logo-row">
-          <span className="logo">
-            <Icon name="spark" />
-          </span>
-          <span className="brand-copy">
-            <strong>沄荣助手</strong>
-            <small>Media workspace</small>
-          </span>
-        </div>
-        <div className="workspace-switcher">
-          <select
-            aria-label="当前工作区"
-            value={workspace.data}
-            onChange={async (event) => {
-              await window.desktop.workspace.activate(event.target.value);
-              await refreshWorkspace();
-            }}
-          >
-            {(workspaces.data ?? []).map((entry) => (
-              <option key={entry.path} value={entry.path}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            title="添加工作区"
-            aria-label="添加工作区"
-            onClick={() => void chooseWorkspace()}
-          >
-            <Icon name="plus" />
-          </button>
-        </div>
-        <form
-          className="new-task"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (taskName.trim()) createTask.mutate();
-          }}
-        >
-          <input
-            value={taskName}
-            onChange={(e) => setTaskName(e.target.value)}
-            placeholder="新任务名称"
-          />
-          <button type="submit" aria-label="新建任务">
-            <Icon name="plus" />
-            <span>新建任务</span>
-          </button>
-        </form>
-        <div className="search-field">
-          <Icon name="search" />
-          <input
-            className="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索任务"
-          />
-        </div>
-        <div className="section-title">最近任务</div>
-        <nav className="project-list">
-          {visibleProjects.map((project) => (
-            <div className="project-row" key={project.id}>
-              <button
-                type="button"
-                className={ui.selectedProjectId === project.id ? "project active" : "project"}
-                onClick={() => {
-                  setPendingDeleteProjectId(null);
-                  ui.selectProject(project.id);
-                }}
-              >
-                <span className={`status ${project.status}`} />
-                <span>
-                  <strong>{project.name}</strong>
-                  <small>{new Date(project.updatedAt).toLocaleDateString()}</small>
-                </span>
-              </button>
-              {pendingDeleteProjectId === project.id ? (
-                <span className="project-delete-confirm">
-                  <button
-                    type="button"
-                    disabled={deleteTask.isPending || isStreaming}
-                    onClick={() => deleteTask.mutate(project.id)}
-                  >
-                    确认删除
-                  </button>
-                  <button type="button" onClick={() => setPendingDeleteProjectId(null)}>
-                    取消
-                  </button>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  className="project-delete"
-                  aria-label={`删除最近任务“${project.name}”`}
-                  disabled={isStreaming}
-                  onClick={() => {
-                    setTaskDeleteError(null);
-                    setPendingDeleteProjectId(project.id);
-                  }}
-                >
-                  <Icon name="trash" />
-                </button>
-              )}
-            </div>
-          ))}
-          {taskDeleteError ? (
-            <p className="project-delete-error" role="alert">
-              {taskDeleteError}
-            </p>
-          ) : null}
-        </nav>
-        <section className="persona-sidebar-section" aria-labelledby="persona-sidebar-title">
-          <header>
-            <span className="persona-sidebar-icon">
-              <Icon name="user" />
-            </span>
-            <span>
-              <strong id="persona-sidebar-title">用户画像</strong>
-              <small>
-                {personaRag.isError
-                  ? "状态读取失败"
-                  : personaRag.data?.ready
-                    ? "画像已就绪"
-                    : "尚未构建"}
-              </small>
-            </span>
-          </header>
-          <div className={`persona-sidebar-meta ${displayedAgentState}`}>
-            <span />
-            {agentLabels[displayedAgentState]}
-            {personaRag.data?.ready ? ` · ${personaRag.data.fileCount} 个本地文件` : ""}
-          </div>
-          <div className="persona-sidebar-buttons">
-            <button
-              type="button"
-              className="persona-sidebar-primary"
-              disabled={
-                personaRag.isPending ||
-                isStreaming ||
-                personaSetupOpen ||
-                readPersonaDocument.isPending ||
-                deletePersonaRag.isPending
-              }
-              onClick={() => {
-                if (personaRag.data?.ready) readPersonaDocument.mutate();
-                else void beginPersonaSetup();
-              }}
-            >
-              {personaSetupOpen
-                ? "正在构建"
-                : readPersonaDocument.isPending
-                  ? "正在打开…"
-                  : personaDocumentOpen
-                    ? "正在查看画像"
-                    : personaRag.data?.ready
-                      ? "查看或更新画像"
-                      : "开始构建画像"}
-            </button>
-            {personaRag.data?.ready ? (
-              <button
-                type="button"
-                className="persona-sidebar-delete"
-                aria-label="删除用户画像"
-                title="删除用户画像"
-                disabled={deletePersonaRag.isPending}
-                onClick={() => {
-                  setPersonaDeleteError(null);
-                  setPersonaDeleteConfirm(true);
-                }}
-              >
-                <Icon name="trash" />
-              </button>
-            ) : null}
-          </div>
-          {personaDocumentError && !personaDocumentOpen ? (
-            <p className="persona-rag-error" role="alert">
-              {personaDocumentError}
-            </p>
-          ) : null}
-        </section>
-        <div className="sidebar-footer">
-          <button
-            type="button"
-            onClick={() => {
-              setPublishCenterOpen(true);
-            }}
-          >
-            <span className="nav-label">
-              <Icon name="file" /> 发布中心
-            </span>
-          </button>
-          <button type="button">
-            <span className="nav-label">
-              <Icon name="monitor" /> 已配对设备
-            </span>
-            <span>0</span>
-          </button>
-          <button type="button">
-            <span className="nav-label">
-              <Icon name="wallet" /> 账户与余额
-            </span>
-            <span>—</span>
-          </button>
-          <button type="button" onClick={ui.openSettings}>
-            <span className="nav-label">
-              <Icon name="settings" /> 设置
-            </span>
-          </button>
-        </div>
-      </aside>
+      <WorkspaceSidebar
+        inert={personaOnboardingActive}
+        workspacePath={workspace.data}
+        workspaces={workspaces.data ?? []}
+        taskName={taskName}
+        search={search}
+        projects={visibleProjects}
+        selectedProjectId={ui.selectedProjectId}
+        pendingDeleteProjectId={pendingDeleteProjectId}
+        taskDeletePending={deleteTask.isPending}
+        taskDeleteError={taskDeleteError}
+        streaming={isStreaming}
+        personaPending={personaRag.isPending}
+        personaError={personaRag.isError}
+        personaReady={personaRag.data?.ready === true}
+        personaFileCount={personaRag.data?.fileCount ?? 0}
+        agentState={displayedAgentState}
+        agentLabel={agentLabels[displayedAgentState]}
+        personaSetupOpen={personaSetupOpen}
+        personaReadPending={readPersonaDocument.isPending}
+        personaDeletePending={deletePersonaRag.isPending}
+        personaDocumentOpen={personaDocumentOpen}
+        personaDocumentError={personaDocumentError}
+        onActivateWorkspace={(path) => {
+          void window.desktop.workspace.activate(path).then(refreshWorkspace);
+        }}
+        onChooseWorkspace={() => void chooseWorkspace()}
+        onTaskNameChange={setTaskName}
+        onCreateTask={() => createTask.mutate()}
+        onSearchChange={setSearch}
+        onSelectProject={(id) => {
+          setPendingDeleteProjectId(null);
+          ui.selectProject(id);
+        }}
+        onRequestDeleteProject={(id) => {
+          setTaskDeleteError(null);
+          setPendingDeleteProjectId(id);
+        }}
+        onCancelDeleteProject={() => setPendingDeleteProjectId(null)}
+        onConfirmDeleteProject={(id) => deleteTask.mutate(id)}
+        onOpenPersona={() => {
+          if (personaRag.data?.ready) readPersonaDocument.mutate();
+          else void beginPersonaSetup();
+        }}
+        onRequestDeletePersona={() => {
+          setPersonaDeleteError(null);
+          setPersonaDeleteConfirm(true);
+        }}
+        onOpenPublishCenter={() => setPublishCenterOpen(true)}
+        onOpenSettings={ui.openSettings}
+      />
 
       <section className="conversation">
         <header className="conversation-header">
@@ -1273,343 +760,79 @@ export function App() {
             onWheel={handleUserScrollIntent}
           >
             {personaDocumentOpen ? (
-              <section className="persona-document-editor">
-                <header>
-                  <div>
-                    <strong>用户画像主文件</strong>
-                    <small title={personaDocumentPath}>{personaDocumentPath}</small>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPersonaDocumentOpen(false);
-                      setPersonaDocumentError(null);
-                    }}
-                  >
-                    关闭
-                  </button>
-                </header>
-                <textarea
-                  aria-label="用户画像主文件内容"
-                  value={personaDocumentContent}
-                  spellCheck={false}
-                  onChange={(event) => {
-                    savePersonaDocument.reset();
-                    setPersonaDocumentContent(event.target.value);
-                  }}
-                />
-                <footer>
-                  <span>
-                    {savePersonaDocument.isSuccess
-                      ? "修改已保存到本地"
-                      : "Markdown 文件，可直接修改标题和内容"}
-                  </span>
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={!personaDocumentContent.trim() || savePersonaDocument.isPending}
-                    onClick={() => savePersonaDocument.mutate(personaDocumentContent)}
-                  >
-                    {savePersonaDocument.isPending ? "正在保存…" : "保存修改"}
-                  </button>
-                </footer>
-                {personaDocumentError ? (
-                  <p className="persona-rag-error" role="alert">
-                    {personaDocumentError}
-                  </p>
-                ) : null}
-              </section>
+              <PersonaDocumentEditor
+                path={personaDocumentPath}
+                content={personaDocumentContent}
+                error={personaDocumentError}
+                saving={savePersonaDocument.isPending}
+                saved={savePersonaDocument.isSuccess}
+                onClose={() => {
+                  setPersonaDocumentOpen(false);
+                  setPersonaDocumentError(null);
+                }}
+                onChange={(content) => {
+                  savePersonaDocument.reset();
+                  setPersonaDocumentContent(content);
+                }}
+                onSave={() => savePersonaDocument.mutate(personaDocumentContent)}
+              />
             ) : conversationMessages.length === 0 && personaSetupOpen ? (
-              <div className="persona-setup-conversation">
-                <header>
-                  <div>
-                    <strong>建立用户画像</strong>
-                    <small>
-                      {personaFlow
-                        ? `当前为第 ${personaFlow.currentStage}/5 阶段`
-                        : "正在准备五阶段画像流程"}
-                    </small>
-                  </div>
-                  {!personaResumeChoiceOpen ? (
-                    <div className="persona-setup-actions">
-                      <button
-                        type="button"
-                        disabled={isStreaming}
-                        onClick={() => void restartPersonaSetup()}
-                      >
-                        重新开始画像
-                      </button>
-                    </div>
-                  ) : null}
-                </header>
-                {personaResumeChoiceOpen ? (
-                  <section className="persona-resume-choice" aria-labelledby="persona-resume-title">
-                    <div className="persona-resume-copy">
-                      <strong id="persona-resume-title">发现上次未完成的用户画像</strong>
-                      <p>可以恢复上次的全部对话和当前进度，也可以清空进度重新开始。</p>
-                    </div>
-                    <div className="persona-resume-actions">
-                      <button type="button" className="primary" onClick={continuePersonaSetup}>
-                        继续上次画像
-                      </button>
-                      <button type="button" onClick={() => void restartPersonaSetup()}>
-                        重新开始
-                      </button>
-                    </div>
-                  </section>
-                ) : (
-                  <div className="message-list" aria-live="polite">
-                    {personaSetupMessages.map((entry) => (
-                      <ChatBubble key={entry.id} message={entry} />
-                    ))}
-                  </div>
-                )}
-                {!personaResumeChoiceOpen && personaSelectionRequired && activePersonaStage ? (
-                  <fieldset className="persona-convergence-options">
-                    <legend>
-                      {personaSelectionMultiple
-                        ? "已达到本阶段问答上限，可选择多项、手动填写或跳过"
-                        : "已达到本阶段问答上限，请选择一项、手动填写或跳过"}
-                    </legend>
-                    <div className="persona-convergence-choice-list">
-                      {activePersonaStage.options.map((option) => (
-                        <button
-                          type="button"
-                          key={option.id}
-                          disabled={isStreaming}
-                          className={personaSelectedOptionIds.includes(option.id) ? "selected" : ""}
-                          aria-pressed={personaSelectedOptionIds.includes(option.id)}
-                          onClick={() => togglePersonaConvergenceOption(option)}
-                        >
-                          <span aria-hidden="true">
-                            {personaSelectedOptionIds.includes(option.id) ? "✓" : ""}
-                          </span>
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                    <label className="persona-convergence-manual">
-                      <span>以上都不符合，可以填写最后一次补充</span>
-                      <textarea
-                        value={personaFinalAnswer}
-                        disabled={isStreaming}
-                        placeholder="请输入最终答案"
-                        onChange={(event) => {
-                          setPersonaFinalAnswer(event.target.value);
-                          setPersonaSelectedOptionIds([]);
-                        }}
-                      />
-                    </label>
-                    <div className="persona-convergence-actions">
-                      <button
-                        type="button"
-                        className="skip"
-                        disabled={isStreaming}
-                        onClick={() =>
-                          void sendPersonaAgentMessage("跳过本阶段", true, false, null, true)
-                        }
-                      >
-                        跳过本阶段
-                      </button>
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={
-                          isStreaming ||
-                          (!personaFinalAnswer.trim() && personaSelectedOptionIds.length === 0)
-                        }
-                        onClick={submitPersonaConvergence}
-                      >
-                        提交最终答案
-                      </button>
-                    </div>
-                  </fieldset>
-                ) : null}
-                {!personaResumeChoiceOpen &&
-                personaFinalConfirmationRequired &&
-                activePersonaStage ? (
-                  <fieldset className="persona-convergence-options persona-final-confirmation">
-                    <legend>这是本阶段最终结论</legend>
-                    <div className="persona-convergence-actions">
-                      <button
-                        type="button"
-                        className="skip"
-                        disabled={isStreaming}
-                        onClick={() =>
-                          void sendPersonaAgentMessage("跳过本阶段", true, false, null, true)
-                        }
-                      >
-                        跳过本阶段
-                      </button>
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={isStreaming}
-                        onClick={() =>
-                          void sendPersonaAgentMessage(
-                            "确认当前结论",
-                            true,
-                            false,
-                            null,
-                            false,
-                            true,
-                          )
-                        }
-                      >
-                        确认并进入下一阶段
-                      </button>
-                    </div>
-                    <label className="persona-convergence-manual">
-                      <span>仍不准确时，可提交最后一次修正</span>
-                      <textarea
-                        value={personaFinalAnswer}
-                        disabled={isStreaming}
-                        placeholder="请输入最终修正"
-                        onChange={(event) => setPersonaFinalAnswer(event.target.value)}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="persona-final-correction-submit"
-                      disabled={isStreaming || !personaFinalAnswer.trim()}
-                      onClick={submitPersonaFinalCorrection}
-                    >
-                      提交最终修正
-                    </button>
-                  </fieldset>
-                ) : null}
-                {!personaResumeChoiceOpen && personaReportDraft ? (
-                  <article className="persona-draft-card">
-                    <header>
-                      <div>
-                        <strong>用户画像报告待确认</strong>
-                        <small>可直接修改；确认前不会写入本地主文件</small>
-                      </div>
-                    </header>
-                    <textarea
-                      className="persona-report-editor"
-                      aria-label="用户画像报告内容"
-                      value={personaReportDraft}
-                      spellCheck={false}
-                      onChange={(event) => {
-                        confirmPersonaRag.reset();
-                        setPersonaReportDraft(event.target.value);
-                      }}
-                    />
-                    {confirmPersonaRag.isError ? (
-                      <p className="persona-rag-error" role="alert">
-                        保存失败：{readableError(confirmPersonaRag.error)}
-                      </p>
-                    ) : null}
-                    <footer>
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={!personaReportDraft.trim() || confirmPersonaRag.isPending}
-                        onClick={() => confirmPersonaRag.mutate({ markdown: personaReportDraft })}
-                      >
-                        {confirmPersonaRag.isPending ? "正在保存…" : "确认并保存到本地"}
-                      </button>
-                    </footer>
-                  </article>
-                ) : null}
-              </div>
+              <PersonaFlowView
+                flow={personaFlow}
+                resumeChoiceOpen={personaResumeChoiceOpen}
+                messages={personaSetupMessages}
+                busy={isStreaming}
+                selectionRequired={Boolean(personaSelectionRequired)}
+                finalConfirmationRequired={Boolean(personaFinalConfirmationRequired)}
+                selectionMultiple={personaSelectionMultiple}
+                selectedOptionIds={personaSelectedOptionIds}
+                finalAnswer={personaFinalAnswer}
+                reportDraft={personaReportDraft}
+                reportSaving={confirmPersonaRag.isPending}
+                reportError={
+                  confirmPersonaRag.isError ? readableError(confirmPersonaRag.error) : null
+                }
+                onRestart={() => void restartPersonaSetup()}
+                onContinue={continuePersonaSetup}
+                onToggleOption={togglePersonaConvergenceOption}
+                onFinalAnswerChange={(value, clearSelection) => {
+                  setPersonaFinalAnswer(value);
+                  if (clearSelection) setPersonaSelectedOptionIds([]);
+                }}
+                onSkipStage={() =>
+                  void sendPersonaAgentMessage("跳过本阶段", true, false, null, true)
+                }
+                onSubmitSelection={submitPersonaConvergence}
+                onConfirmStage={() =>
+                  void sendPersonaAgentMessage("确认当前结论", true, false, null, false, true)
+                }
+                onSubmitCorrection={submitPersonaFinalCorrection}
+                onReportChange={(value) => {
+                  confirmPersonaRag.reset();
+                  setPersonaReportDraft(value);
+                }}
+                onConfirmReport={() =>
+                  personaReportDraft && confirmPersonaRag.mutate({ markdown: personaReportDraft })
+                }
+              />
             ) : conversationMessages.length === 0 &&
               personaRag.data?.ready &&
               contentAgentType === "product_promotion" &&
               !productPlatformSelectionConfirmed ? (
-              <div className="welcome-card content-type-picker platform-type-picker">
-                <button
-                  type="button"
-                  className="content-agent-back platform-picker-back"
-                  onClick={returnToContentTypePicker}
-                >
-                  <span aria-hidden="true">←</span>
-                  返回内容类型选择
-                </button>
-                <span className="welcome-mark">
-                  <Icon name="spark" />
-                </span>
-                <h1>选择目标平台</h1>
-                <p>可同时选择多个发布平台，产品问询完成后将分别调用对应的平台文案 Agent。</p>
-                <div className="content-type-options platform-options">
-                  {PRODUCT_PLATFORM_OPTIONS.map((platform) => (
-                    <button
-                      type="button"
-                      key={platform.id}
-                      disabled={!platform.enabled}
-                      className={
-                        productTargetPlatforms.some((candidate) => candidate === platform.id)
-                          ? "selected"
-                          : ""
-                      }
-                      aria-pressed={productTargetPlatforms.some(
-                        (candidate) => candidate === platform.id,
-                      )}
-                      onClick={() => toggleProductPlatform(platform.id)}
-                    >
-                      <strong>{platform.label}</strong>
-                      <span>{platform.description}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="platform-picker-actions">
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={productTargetPlatforms.length === 0}
-                    onClick={confirmProductPlatforms}
-                  >
-                    开始填写产品信息
-                  </button>
-                </div>
-              </div>
+              <ProductPlatformPicker
+                selected={productTargetPlatforms}
+                onBack={returnToContentTypePicker}
+                onToggle={toggleProductPlatform}
+                onConfirm={confirmProductPlatforms}
+              />
             ) : conversationMessages.length === 0 && personaRag.data?.ready ? (
-              <div className="welcome-card content-type-picker">
-                <span className="welcome-mark">
-                  <Icon name="spark" />
-                </span>
-                <h1>选择本次内容类型</h1>
-                <p>不同类型会进入不同的智能体对话流程。选择后才会显示对话输入框。</p>
-                <div className="content-type-options">
-                  <button type="button" onClick={() => selectContentAgent("product_promotion")}>
-                    <strong>产品推广文案</strong>
-                    <span>围绕具体产品、卖点和活动生成内容</span>
-                  </button>
-                  <button type="button" onClick={() => selectContentAgent("company_pr")}>
-                    <strong>公司软文</strong>
-                    <span>围绕品牌、企业动态或公司主题生成内容</span>
-                  </button>
-                </div>
-              </div>
+              <ContentTypePicker onSelect={selectContentAgent} />
             ) : conversationMessages.length === 0 ? (
-              <div className="welcome-card persona-rag-empty">
-                <span className="welcome-mark">
-                  <Icon name="spark" />
-                </span>
-                <h1>先建立用户画像</h1>
-                <p>
-                  Agent 会结合你提供的内容和可选参考资料，自主判断还缺少什么，并且只追问必要信息。
-                  画像草稿需要你确认后才会保存到本地。
-                </p>
-                <button
-                  type="button"
-                  className="persona-rag-build"
-                  disabled={personaRag.isPending}
-                  onClick={() => void beginPersonaSetup()}
-                >
-                  <Icon name="spark" />
-                  <span>
-                    <strong>与 Agent 对话建立画像</strong>
-                    <small>进入后由你决定是否添加参考资料</small>
-                  </span>
-                </button>
-                {personaRag.isError ? (
-                  <p className="persona-rag-error" role="alert">
-                    {readableError(personaRag.error)}
-                  </p>
-                ) : null}
-              </div>
+              <PersonaOnboardingCard
+                pending={personaRag.isPending}
+                error={personaRag.isError ? readableError(personaRag.error) : null}
+                onBegin={() => void beginPersonaSetup()}
+              />
             ) : (
               <div className="message-list" aria-live="polite">
                 {contentAgentType ? (
@@ -1632,90 +855,16 @@ export function App() {
                 ))}
                 {contentAgentType === "product_promotion" &&
                 productAgentResponse?.status === "questioning" ? (
-                  <section className="persona-question-card product-question-card">
-                    <header>
-                      <strong>
-                        {productAgentResponse.selectionMode === "multiple"
-                          ? productAgentResponse.rankSelections
-                            ? `请按优先级选择，最多 ${productAgentResponse.maxSelections ?? productAgentResponse.options.length} 项，也可以补充文字`
-                            : productAgentResponse.maxSelections
-                              ? `最多选择 ${productAgentResponse.maxSelections} 项，也可以补充文字`
-                              : "可多选，也可以补充文字"
-                          : productAgentResponse.selectionMode === "single"
-                            ? "请选择一项，也可以补充文字"
-                            : "请输入你的回答"}
-                      </strong>
-                    </header>
-                    {productAgentResponse.selectionMode !== "text" ? (
-                      <div
-                        className={`persona-question-options ${productAgentResponse.selectionMode}`}
-                      >
-                        {productAgentResponse.options.map((option) => {
-                          const priority = productSelectedOptionIds.indexOf(option.id);
-                          const selected = priority >= 0;
-                          const maxSelections =
-                            productAgentResponse.selectionMode === "single"
-                              ? 1
-                              : (productAgentResponse.maxSelections ??
-                                productAgentResponse.options.length);
-                          const selectionLimitReached =
-                            productAgentResponse.selectionMode === "multiple" &&
-                            !selected &&
-                            productSelectedOptionIds.length >= maxSelections;
-                          return (
-                            <button
-                              type="button"
-                              key={option.id}
-                              className={selected ? "selected" : ""}
-                              aria-pressed={selected}
-                              disabled={isStreaming || selectionLimitReached}
-                              onClick={() => toggleProductOption(option.id)}
-                            >
-                              <span aria-hidden="true">
-                                {selected
-                                  ? productAgentResponse.rankSelections
-                                    ? priority + 1
-                                    : "✓"
-                                  : ""}
-                              </span>
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    {productAgentResponse.allowCustomInput ? (
-                      <textarea
-                        className="product-question-input"
-                        value={productCustomInput}
-                        disabled={isStreaming}
-                        placeholder={
-                          productAgentResponse.selectionMode === "text"
-                            ? "请输入具体信息…"
-                            : "需要时可继续补充…"
-                        }
-                        onChange={(event) => setProductCustomInput(event.target.value)}
-                      />
-                    ) : null}
-                    <footer>
-                      {productAgentResponse.allowSkip ? (
-                        <button type="button" disabled={isStreaming} onClick={skipProductQuestion}>
-                          跳过
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        className="primary"
-                        disabled={
-                          isStreaming ||
-                          (productSelectedOptionIds.length === 0 && !productCustomInput.trim())
-                        }
-                        onClick={submitProductAnswer}
-                      >
-                        提交回答
-                      </button>
-                    </footer>
-                  </section>
+                  <ProductQuestionCard
+                    response={productAgentResponse}
+                    selectedOptionIds={productSelectedOptionIds}
+                    customInput={productCustomInput}
+                    busy={isStreaming}
+                    onToggleOption={toggleProductOption}
+                    onCustomInputChange={setProductCustomInput}
+                    onSkip={skipProductQuestion}
+                    onSubmit={submitProductAnswer}
+                  />
                 ) : null}
               </div>
             )}
@@ -1743,171 +892,58 @@ export function App() {
               contentAgentType === "product_promotion" &&
               (productAgentResponse || isStreaming)
             ))) ? (
-          <div className="composer-wrap">
-            {personaSetupOpen ? (
-              <div className="persona-setup-composer-label">
-                正在建立用户画像
-                {personaFlow ? ` · 第 ${personaFlow.currentStage}/5 阶段` : ""}
-                {" · 可随时上传补充资料"}
-              </div>
-            ) : null}
-            <fieldset
-              aria-label={
-                personaSetupOpen ? "用户画像对话输入区，可拖拽上传资料" : "任务对话输入区"
-              }
-              className={
-                personaSetupOpen && personaDropActive ? "composer drop-active" : "composer"
-              }
-              onDragEnter={personaSetupOpen ? handlePersonaDragOver : undefined}
-              onDragOver={personaSetupOpen ? handlePersonaDragOver : undefined}
-              onDragLeave={personaSetupOpen ? () => setPersonaDropActive(false) : undefined}
-              onDrop={personaSetupOpen ? handlePersonaDrop : undefined}
-            >
-              <textarea
-                ref={messageInputRef}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    void sendMessage();
-                  }
-                }}
-                placeholder={
-                  personaSetupOpen
-                    ? "请输入你的回答…"
-                    : contentAgentType === "company_pr"
-                      ? "告诉我这次公司软文的主题…"
-                      : "告诉我这次要推广的产品…"
-                }
-                disabled={personaSetupOpen && isStreaming}
-              />
-              <div className="composer-actions">
-                <button
-                  type="button"
-                  title={personaSetupOpen ? "上传画像参考资料" : "添加附件"}
-                  aria-label={personaSetupOpen ? "上传画像参考资料" : "添加附件"}
-                  className="attach"
-                  disabled={personaSetupOpen && (personaUploadPending || isStreaming)}
-                  onClick={() => {
-                    if (personaSetupOpen) importPersonaRagFiles.mutate();
-                  }}
-                >
-                  <Icon name="paperclip" />
-                </button>
-                <span className="composer-note">
-                  {personaSetupOpen
-                    ? "支持一次选择多个本地资料"
-                    : ui.selectedProjectId
-                      ? "支持图片、CSV、XLSX、PDF"
-                      : "首次发送将自动创建任务"}
-                </span>
-                <button
-                  className="send"
-                  type="button"
-                  aria-label="发送消息"
-                  onClick={() => void sendMessage()}
-                  disabled={!message.trim() || isStreaming}
-                >
-                  {isStreaming ? <span className="button-spinner" /> : <Icon name="arrow-up" />}
-                </button>
-              </div>
-            </fieldset>
-          </div>
+          <ChatComposer
+            personaMode={personaSetupOpen}
+            personaStage={personaFlow?.currentStage ?? null}
+            personaDropActive={personaDropActive}
+            personaUploadPending={personaUploadPending}
+            streaming={isStreaming}
+            selectedProjectId={ui.selectedProjectId}
+            contentAgentType={contentAgentType}
+            message={message}
+            inputRef={messageInputRef}
+            onMessageChange={setMessage}
+            onSend={() => void sendMessage()}
+            onAttach={() => {
+              if (personaSetupOpen) importPersonaRagFiles.mutate();
+            }}
+            onDragOver={handlePersonaDragOver}
+            onDragLeave={() => setPersonaDropActive(false)}
+            onDrop={handlePersonaDrop}
+          />
         ) : null}
       </section>
 
-      <aside
-        className="artifacts"
-        aria-hidden={personaOnboardingActive}
-        inert={personaOnboardingActive ? true : undefined}
-      >
-        <header>
-          <div>
-            <strong>生成物</strong>
-            <small>{artifacts.data?.length ?? 0} 个文件</small>
-          </div>
-          <button type="button" onClick={() => artifacts.refetch()}>
-            <Icon name="refresh" />
-          </button>
-        </header>
-        <ArtifactList
-          artifacts={artifacts.data ?? []}
-          selected={ui.selectedArtifactPath}
-          onSelect={ui.selectArtifact}
-        />
-        <div className="preview">
-          {!ui.selectedArtifactPath && (
-            <div className="empty-preview">
-              <span className="preview-icon">
-                <Icon name="file" />
-              </span>
-              <strong>暂无预览</strong>
-              <p>Agent 生成的文章、图片和报告会出现在这里</p>
-            </div>
-          )}
-          {preview.data?.content && preview.data.mediaType === "text/markdown" && (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{preview.data.content}</ReactMarkdown>
-          )}
-          {preview.data?.content && preview.data.mediaType !== "text/markdown" && (
-            <pre>{preview.data.content}</pre>
-          )}
-          {preview.data && !preview.data.content && (
-            <div className="empty-preview">
-              <p>请使用系统应用打开此文件。</p>
-            </div>
-          )}
-        </div>
-        {preview.data && (
-          <footer className="file-actions">
-            <button
-              type="button"
-              onClick={() =>
-                window.desktop.files.open(
-                  required(ui.selectedProjectId, "未选择任务"),
-                  required(ui.selectedArtifactPath, "未选择生成物"),
-                )
-              }
-            >
-              打开
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                window.desktop.files.reveal(
-                  required(ui.selectedProjectId, "未选择任务"),
-                  required(ui.selectedArtifactPath, "未选择生成物"),
-                )
-              }
-            >
-              显示位置
-            </button>
-            <button type="button" onClick={() => navigator.clipboard.writeText(preview.data.path)}>
-              复制路径
-            </button>
-            {preview.data.content ? (
-              <button
-                type="button"
-                onClick={() => {
-                  const artifact = (artifacts.data ?? []).find(
-                    (entry) => entry.path === ui.selectedArtifactPath,
-                  );
-                  setPublishCenterSeed([
-                    {
-                      key: crypto.randomUUID(),
-                      title: artifact?.name.replace(/\.[^.]+$/, "") || "Agent 生成内容",
-                      content: preview.data?.content ?? "",
-                    },
-                  ]);
-                  setPublishCenterOpen(true);
-                }}
-              >
-                转入发布中心
-              </button>
-            ) : null}
-          </footer>
-        )}
-      </aside>
+      <ArtifactPanel
+        inert={personaOnboardingActive}
+        artifacts={artifacts.data ?? []}
+        selectedPath={ui.selectedArtifactPath}
+        preview={preview.data ?? null}
+        onSelect={ui.selectArtifact}
+        onRefresh={() => void artifacts.refetch()}
+        onOpen={() =>
+          void window.desktop.files.open(
+            required(ui.selectedProjectId, "未选择任务"),
+            required(ui.selectedArtifactPath, "未选择生成物"),
+          )
+        }
+        onReveal={() =>
+          void window.desktop.files.reveal(
+            required(ui.selectedProjectId, "未选择任务"),
+            required(ui.selectedArtifactPath, "未选择生成物"),
+          )
+        }
+        onSendToPublishCenter={(artifact, artifactPreview) => {
+          setPublishCenterSeed([
+            {
+              key: crypto.randomUUID(),
+              title: artifact?.name.replace(/\.[^.]+$/, "") || "Agent 生成内容",
+              content: artifactPreview.content ?? "",
+            },
+          ]);
+          setPublishCenterOpen(true);
+        }}
+      />
       <PublishCenter
         open={publishCenterOpen}
         workspacePath={workspace.data ?? null}
@@ -1917,56 +953,15 @@ export function App() {
       />
       {personaOnboardingActive ? null : <SettingsPanel />}
       {personaDeleteConfirm ? (
-        <div className="persona-delete-overlay">
-          <button
-            type="button"
-            className="persona-delete-backdrop"
-            aria-label="取消永久删除"
-            disabled={deletePersonaRag.isPending}
-            onClick={() => {
-              setPersonaDeleteConfirm(false);
-              setPersonaDeleteError(null);
-            }}
-          />
-          <section
-            className="persona-delete-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="persona-delete-title"
-          >
-            <header>
-              <div>
-                <h2 id="persona-delete-title">永久删除用户画像？</h2>
-                <p>此操作会永久删除画像主文件和所有参考资料，删除后无法恢复。</p>
-              </div>
-            </header>
-            {personaDeleteError ? (
-              <p className="persona-rag-error" role="alert">
-                {personaDeleteError}
-              </p>
-            ) : null}
-            <footer>
-              <button
-                type="button"
-                disabled={deletePersonaRag.isPending}
-                onClick={() => {
-                  setPersonaDeleteConfirm(false);
-                  setPersonaDeleteError(null);
-                }}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="danger"
-                disabled={deletePersonaRag.isPending}
-                onClick={() => deletePersonaRag.mutate()}
-              >
-                {deletePersonaRag.isPending ? "正在永久删除…" : "永久删除"}
-              </button>
-            </footer>
-          </section>
-        </div>
+        <PersonaDeleteDialog
+          error={personaDeleteError}
+          deleting={deletePersonaRag.isPending}
+          onCancel={() => {
+            setPersonaDeleteConfirm(false);
+            setPersonaDeleteError(null);
+          }}
+          onConfirm={() => deletePersonaRag.mutate()}
+        />
       ) : null}
     </main>
   );
@@ -1977,165 +972,4 @@ function readableError(error: unknown): string {
   return message
     .replace(/^Error invoking remote method '[^']+': Error:\s*/, "")
     .replace(/^Error:\s*/, "");
-}
-
-const ChatBubble = memo(function ChatBubble({ message }: { message: ConversationMessage }) {
-  if (message.hidden) return null;
-  return (
-    <article className={`chat-message ${message.role} ${message.status}`}>
-      <header>
-        <span>{message.role === "user" ? "你" : "Agent"}</span>
-        {message.role === "assistant" && message.status === "streaming" && (
-          <span className="stream-indicator">
-            <span className="spinner" />
-            正在生成
-          </span>
-        )}
-      </header>
-      {message.content &&
-        (message.role === "assistant" ? (
-          <div className="message-markdown">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-          </div>
-        ) : (
-          <p>{message.content}</p>
-        ))}
-      {message.tools.length > 0 && (
-        <div className="tool-call-list">
-          {message.tools.map((tool) => (
-            <ToolCallStatus key={tool.id} tool={tool} />
-          ))}
-        </div>
-      )}
-      {message.error && (
-        <div className="message-error">
-          <strong>请求失败</strong>
-          <span>{message.error}</span>
-          <small>可重新输入内容后再次发送。</small>
-        </div>
-      )}
-    </article>
-  );
-});
-
-function ToolCallStatus({ tool }: { tool: ConversationToolCall }) {
-  const labels: Record<ConversationToolCall["status"], string> = {
-    requested: "已请求",
-    running: "执行中",
-    completed: "已完成",
-    failed: "失败",
-  };
-  return (
-    <details className={`tool-call ${tool.status}`}>
-      <summary>
-        <span className="tool-icon">
-          {tool.status === "running" ? <span className="spinner" /> : "⌘"}
-        </span>
-        <span>
-          <strong>{tool.name}</strong>
-          <small>{labels[tool.status]}</small>
-        </span>
-      </summary>
-      {tool.arguments && <pre>{tool.arguments}</pre>}
-      {tool.result && <pre className="tool-result">{tool.result}</pre>}
-    </details>
-  );
-}
-
-function ArtifactList({
-  artifacts,
-  selected,
-  onSelect,
-}: {
-  artifacts: Artifact[];
-  selected: string | null;
-  onSelect(path: string): void;
-}) {
-  const labels: Record<Artifact["kind"], string> = {
-    article: "文章",
-    image: "图片",
-    analytics_report: "分析报告",
-    strategy: "创作策略",
-    video: "视频",
-    publish_receipt: "发布回执",
-    input: "输入文件",
-  };
-  const grouped = Object.groupBy(artifacts, (artifact) => artifact.kind);
-  return (
-    <div className="artifact-list">
-      {Object.entries(grouped).map(([kind, items]) => (
-        <section key={kind}>
-          <h3>
-            {labels[kind as Artifact["kind"]]} <span>{items?.length ?? 0}</span>
-          </h3>
-          {items?.map((artifact) => (
-            <button
-              type="button"
-              key={artifact.path}
-              className={selected === artifact.path ? "active" : ""}
-              onClick={() => onSelect(artifact.path)}
-            >
-              <span className="file-icon">
-                {artifact.mediaType.startsWith("image/") ? "▧" : "▤"}
-              </span>
-              <span>
-                <strong>{artifact.name}</strong>
-                <small>{new Date(artifact.updatedAt).toLocaleString()}</small>
-              </span>
-            </button>
-          ))}
-        </section>
-      ))}
-    </div>
-  );
-}
-
-type IconName =
-  | "plus"
-  | "search"
-  | "spark"
-  | "monitor"
-  | "wallet"
-  | "settings"
-  | "paperclip"
-  | "arrow-up"
-  | "refresh"
-  | "file"
-  | "trash"
-  | "user";
-
-function Icon({ name }: { name: IconName }) {
-  const paths: Record<IconName, ReactNode> = {
-    plus: <path d="M12 5v14M5 12h14" />,
-    search: <path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" />,
-    spark: (
-      <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Zm6 12 .8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8L18 15Z" />
-    ),
-    monitor: <path d="M4 5h16v11H4V5Zm5 15h6m-3-4v4" />,
-    wallet: (
-      <path d="M4 6.5h14a2 2 0 0 1 2 2V18H6a2 2 0 0 1-2-2V6.5Zm0 0A2.5 2.5 0 0 1 6.5 4H17v2.5M16 11h4v4h-4a2 2 0 1 1 0-4Z" />
-    ),
-    settings: (
-      <path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Zm0-5 1 2.2 2.4.6 2-1.3 1.6 1.6-1.3 2 .6 2.4 2.2 1v2l-2.2 1-.6 2.4 1.3 2-1.6 1.6-2-1.3-2.4.6-1 2.2h-2l-1-2.2-2.4-.6-2 1.3L5 19.4l1.3-2-.6-2.4-2.2-1v-2l2.2-1 .6-2.4-1.3-2L6.6 5l2 1.3 2.4-.6 1-2.2h2Z" />
-    ),
-    paperclip: <path d="m8.5 12.5 5.8-5.8a3 3 0 0 1 4.2 4.2l-7.2 7.2a5 5 0 0 1-7.1-7.1l7-7" />,
-    "arrow-up": <path d="m6 11 6-6 6 6M12 5v14" />,
-    refresh: <path d="M20 6v5h-5M4 18v-5h5m10-2a7 7 0 0 0-12-4L4 11m16 2-3 4a7 7 0 0 1-12-4" />,
-    file: <path d="M7 3h7l4 4v14H7V3Zm7 0v5h5M10 13h5m-5 4h5" />,
-    trash: <path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" />,
-    user: <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0" />,
-  };
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {paths[name]}
-      </g>
-    </svg>
-  );
 }

@@ -322,7 +322,7 @@ async function fillZhihuWindow(
     return {
       state: (await pageLooksLoggedOut(window)) ? "waiting_for_login" : "needs_attention",
       message: (await pageLooksLoggedOut(window))
-        ? "请在已打开的知乎窗口完成登录，然后返回发布中心继续填充。"
+        ? "请在已打开的知乎窗口完成登录，然后返回草稿区继续填充。"
         : "没有识别到知乎文章标题输入框，请确认当前位于“写文章”页面后重试。",
     };
   }

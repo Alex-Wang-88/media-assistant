@@ -204,7 +204,7 @@ describe("Persona RAG plain-text onboarding", () => {
           turn: turnPersona,
         },
         */
-       personaFlow: {
+        personaFlow: {
           load: vi.fn(async () => null),
           start: vi.fn(async () => activeFlow),
           turn: turnPersona,
@@ -237,6 +237,11 @@ describe("Persona RAG plain-text onboarding", () => {
           deleteBilibiliAccount: vi.fn(async () => []),
           openBilibili: vi.fn(),
           fillBilibili: vi.fn(),
+          listXAccounts: vi.fn(async () => []),
+          createXAccount: vi.fn(),
+          deleteXAccount: vi.fn(async () => []),
+          openX: vi.fn(),
+          fillX: vi.fn(),
         },
       } satisfies DesktopApi,
     });

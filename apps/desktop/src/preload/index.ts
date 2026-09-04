@@ -24,6 +24,7 @@ import type {
   PublishAutomationResult,
   PublishDraftState,
   WorkspaceEntry,
+  XAccount,
   ZhihuAccount,
 } from "@yoom/desktop-contracts";
 import { contextBridge, ipcRenderer } from "electron";
@@ -72,6 +73,11 @@ const channels = {
   publishZhihuAccountDelete: "publish:zhihu-account-delete",
   publishZhihuOpen: "publish:zhihu-open",
   publishZhihuFill: "publish:zhihu-fill",
+  publishXAccountsList: "publish:x-accounts-list",
+  publishXAccountCreate: "publish:x-account-create",
+  publishXAccountDelete: "publish:x-account-delete",
+  publishXOpen: "publish:x-open",
+  publishXFill: "publish:x-fill",
 } as const;
 
 function expectString(value: unknown): string {
@@ -277,6 +283,26 @@ const api: DesktopApi = {
     fillZhihu: (input) =>
       ipcRenderer
         .invoke(channels.publishZhihuFill, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    listXAccounts: () =>
+      ipcRenderer
+        .invoke(channels.publishXAccountsList)
+        .then((value: unknown) => expectArray<XAccount>(value)),
+    createXAccount: () =>
+      ipcRenderer
+        .invoke(channels.publishXAccountCreate)
+        .then((value: unknown) => expectObject<XAccount>(value)),
+    deleteXAccount: (accountId) =>
+      ipcRenderer
+        .invoke(channels.publishXAccountDelete, { accountId })
+        .then((value: unknown) => expectArray<XAccount>(value)),
+    openX: (input) =>
+      ipcRenderer
+        .invoke(channels.publishXOpen, input)
+        .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
+    fillX: (input) =>
+      ipcRenderer
+        .invoke(channels.publishXFill, input)
         .then((value: unknown) => expectObject<PublishAutomationResult>(value)),
   },
 };

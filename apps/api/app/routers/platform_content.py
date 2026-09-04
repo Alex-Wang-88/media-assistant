@@ -19,11 +19,11 @@ async def generate_platform_content(
         None,
     )
     if provider is None:
-        variable_name = (
-            "BILIBILI_CONTENT_AGENT_SHARE_URL"
-            if body.platform.value == "bilibili"
-            else "ZHIHU_CONTENT_AGENT_SHARE_URL"
-        )
+        variable_name = {
+            "bilibili": "BILIBILI_CONTENT_AGENT_SHARE_URL",
+            "zhihu": "ZHIHU_CONTENT_AGENT_SHARE_URL",
+            "x": "X_CONTENT_AGENT_SHARE_URL",
+        }[body.platform.value]
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             f"{body.platform.value} 文案 Agent 未配置，请设置 "

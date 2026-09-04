@@ -348,7 +348,7 @@ async function fillBilibiliWindow(
     return {
       state: loggedOut ? "waiting_for_login" : "needs_attention",
       message: loggedOut
-        ? "请在已打开的哔哩哔哩窗口完成首次登录，然后返回发布中心点击“我已登录，继续填充”。"
+        ? "请在已打开的哔哩哔哩窗口完成首次登录，然后返回草稿区点击“我已登录，继续填充”。"
         : "没有识别到 B 站“发布动态”的正文输入区。请确认当前位于动态首页，再点击“继续填充”。",
     };
   }

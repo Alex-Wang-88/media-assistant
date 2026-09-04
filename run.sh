@@ -12,7 +12,7 @@ test -f apps/desktop/node_modules/electron/path.txt
 
 PYTHONDONTWRITEBYTECODE=1 \
 uv run --no-sync --directory apps/api \
-  uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+  python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
 API_PID=$!
 
 cleanup() {

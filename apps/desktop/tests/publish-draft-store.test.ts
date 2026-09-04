@@ -39,6 +39,7 @@ function draftState(): PersistedPublishDraftState {
       weibo: false,
       bilibili: false,
       xiaohongshu: false,
+      x: false,
     },
   };
 }

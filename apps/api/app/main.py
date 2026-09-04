@@ -80,6 +80,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         app.state.zhihu_content_agent = YunbloomPlatformContentAgent(
             zhihu_content_share_client
         )
+    if settings.x_content_agent_share_url and settings.persona_agent_api_key:
+        x_content_share_client = YunbloomShareClient(
+            url=settings.x_content_agent_share_url,
+            api_key=settings.persona_agent_api_key,
+            max_transport_retries=1,
+        )
+        app.state.x_content_agent = YunbloomPlatformContentAgent(x_content_share_client)
     yield
 
 
@@ -109,6 +116,7 @@ async def health(request: Request) -> HealthResponse:
         or getattr(request.app.state, "product_promotion_agent", None) is not None
         or getattr(request.app.state, "bilibili_content_agent", None) is not None
         or getattr(request.app.state, "zhihu_content_agent", None) is not None
+        or getattr(request.app.state, "x_content_agent", None) is not None
         or getattr(request.app.state, "chat_provider", None) is not None
     ):
         return HealthResponse(agent="ready")

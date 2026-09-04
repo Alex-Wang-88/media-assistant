@@ -10,6 +10,7 @@ class Settings:
     product_promotion_agent_share_url: str | None
     bilibili_content_agent_share_url: str | None
     zhihu_content_agent_share_url: str | None
+    x_content_agent_share_url: str | None
     persona_agent_api_key: str | None
     persona_stage_1_share_url: str | None
     persona_stage_2_share_url: str | None
@@ -32,6 +33,7 @@ class Settings:
             zhihu_content_agent_share_url=environ.get(
                 "ZHIHU_CONTENT_AGENT_SHARE_URL"
             ),
+            x_content_agent_share_url=environ.get("X_CONTENT_AGENT_SHARE_URL"),
             persona_agent_api_key=environ.get("PERSONA_AGENT_API_KEY"),
             persona_stage_1_share_url=environ.get("PERSONA_STAGE_1_SHARE_URL"),
             persona_stage_2_share_url=environ.get("PERSONA_STAGE_2_SHARE_URL"),

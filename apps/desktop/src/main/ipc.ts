@@ -8,6 +8,7 @@ import {
   createProjectInputSchema,
   deleteBilibiliAccountInputSchema,
   deleteProjectInputSchema,
+  deleteXAccountInputSchema,
   deleteZhihuAccountInputSchema,
   fileActionInputSchema,
   ipcChannels,
@@ -25,6 +26,7 @@ import {
   publishStartInputSchema,
   releasePublishImagesInputSchema,
   selectPublishImagesInputSchema,
+  xFillInputSchema,
   type ZhihuContentBlock,
   zhihuFillInputSchema,
 } from "@yoom/desktop-contracts";
@@ -62,6 +64,13 @@ import {
   normalizePersonaAgentTurnResponse,
 } from "./persona-flow";
 import type { Workspace } from "./workspace";
+import {
+  continueFillingX,
+  createXAccount,
+  deleteXAccount,
+  listXAccounts,
+  openAndFillX,
+} from "./x-publisher";
 import {
   continueFillingZhihu,
   createZhihuAccount,
@@ -435,6 +444,30 @@ export function registerIpc(access: WorkspaceAccess): void {
       input.accountId,
       input.title,
       resolveZhihuPublishBlocks(input.blocks),
+    );
+  });
+  ipcMain.handle(ipcChannels.publishXAccountsList, () => listXAccounts());
+  ipcMain.handle(ipcChannels.publishXAccountCreate, () => createXAccount());
+  ipcMain.handle(ipcChannels.publishXAccountDelete, async (_event, raw) => {
+    const input = deleteXAccountInputSchema.parse(raw);
+    return deleteXAccount(input.accountId);
+  });
+  ipcMain.handle(ipcChannels.publishXOpen, async (_event, raw) => {
+    const input = xFillInputSchema.parse(raw);
+    return openAndFillX(
+      input.accountId,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
+      input.autoPublish,
+    );
+  });
+  ipcMain.handle(ipcChannels.publishXFill, async (_event, raw) => {
+    const input = xFillInputSchema.parse(raw);
+    return continueFillingX(
+      input.accountId,
+      input.content,
+      resolveSelectedPublishImages(input.imageIds),
+      input.autoPublish,
     );
   });
 }

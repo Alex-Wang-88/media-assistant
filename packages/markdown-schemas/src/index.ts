@@ -29,7 +29,7 @@ const baseFrontmatterSchema = z.object({
 
 export const articleFrontmatterSchema = baseFrontmatterSchema.extend({
   schema: z.literal("yoom.article/v1"),
-  platform: z.enum(["wechat", "toutiao", "zhihu", "weibo", "bilibili", "xiaohongshu"]),
+  platform: z.enum(["wechat", "toutiao", "zhihu", "weibo", "bilibili", "xiaohongshu", "x"]),
   published_at: z.iso.datetime({ offset: true }).nullable().default(null),
 });
 
