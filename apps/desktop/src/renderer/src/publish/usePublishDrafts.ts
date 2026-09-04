@@ -6,7 +6,9 @@ import {
   createDraft,
   type MemoryPublishDraft,
   migrateLegacyZhihuDraft,
+  normalizeXDraftTitle,
   type PublishCenterSeed,
+  xDraftTitle,
 } from "./publish-draft-model";
 
 export type PublishDraftController = {
@@ -50,7 +52,10 @@ export function usePublishDrafts({
         ? [
             {
               platform: entry.platform,
-              title: entry.title || "Agent 生成内容",
+              title:
+                entry.platform === "x"
+                  ? xDraftTitle(entry.content)
+                  : entry.title || "Agent 生成内容",
               content: entry.content,
               images: [],
               zhihuBlocks:
@@ -60,7 +65,8 @@ export function usePublishDrafts({
         : [],
     );
     const generatedDraft = createDraft({
-      title: primary.title || "Agent 生成内容",
+      title:
+        primary.platform === "x" ? xDraftTitle(primary.content) : primary.title || "Agent 生成内容",
       content: primary.content,
       platform: primary.platform ?? null,
       source: "generated",
@@ -88,7 +94,7 @@ export function usePublishDrafts({
       .then((state) => {
         if (cancelled) return;
         const restoredDrafts = state?.drafts.map((draft) =>
-          migrateLegacyZhihuDraft({ ...draft, automationResult: null }),
+          normalizeXDraftTitle(migrateLegacyZhihuDraft({ ...draft, automationResult: null })),
         );
         const nextDrafts =
           restoredDrafts && restoredDrafts.length > 0 ? restoredDrafts : [createDraft()];

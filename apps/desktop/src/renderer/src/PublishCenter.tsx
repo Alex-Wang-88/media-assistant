@@ -13,6 +13,7 @@ import {
   NEW_ZHIHU_ACCOUNT_VALUE,
   type PublishCenterSeed,
   uniqueDraftImageIds,
+  xDraftTitle,
   zhihuBlocksToContent,
 } from "./publish/publish-draft-model";
 import { usePlatformAccounts } from "./publish/usePlatformAccounts";
@@ -72,13 +73,16 @@ export function PublishCenter({
     (selectedDraft?.platform === "bilibili" && Boolean(selectedDraft.bilibiliAccountId)) ||
     (selectedDraft?.platform === "zhihu" && Boolean(selectedDraft.zhihuAccountId)) ||
     (selectedDraft?.platform === "x" && Boolean(selectedDraft.xAccountId));
-
   const updateSelectedDraft = (patch: Partial<MemoryPublishDraft>) => {
     if (!selectedDraft) return;
     setDrafts((current) =>
       current.map((draft) => {
         if (draft.id !== selectedDraft.id) return draft;
-        const nextDraft = { ...draft, ...patch };
+        const mergedDraft = { ...draft, ...patch };
+        const nextDraft =
+          mergedDraft.platform === "x"
+            ? { ...mergedDraft, title: xDraftTitle(mergedDraft.content) }
+            : mergedDraft;
         if (
           draft.source !== "generated" ||
           !draft.platform ||
@@ -96,10 +100,10 @@ export function PublishCenter({
             variant.platform === draft.platform
               ? {
                   ...variant,
-                  title: patch.title ?? draft.title,
-                  content: patch.content ?? draft.content,
-                  images: patch.images ?? draft.images,
-                  zhihuBlocks: patch.zhihuBlocks ?? draft.zhihuBlocks,
+                  title: nextDraft.title,
+                  content: nextDraft.content,
+                  images: nextDraft.images,
+                  zhihuBlocks: nextDraft.zhihuBlocks,
                 }
               : variant,
           ),
@@ -127,6 +131,9 @@ export function PublishCenter({
     setNotice,
     setError,
   });
+  const selectedXUsesApi =
+    selectedDraft?.platform === "x" &&
+    xAccounts.find((account) => account.id === selectedDraft.xAccountId)?.mode === "api";
 
   const { selectImages, selectZhihuImage, openPlatform } = usePublishAutomation({
     selectedDraft,
@@ -152,13 +159,17 @@ export function PublishCenter({
     );
     const nextVariant = variants.find((variant) => variant.platform === platform);
     if (!nextVariant) return;
+    const nextTitle = platform === "x" ? xDraftTitle(nextVariant.content) : nextVariant.title;
+    const nextVariants = variants.map((variant) =>
+      variant.platform === platform ? { ...variant, title: nextTitle } : variant,
+    );
     setDrafts((current) =>
       current.map((draft) =>
         draft.id === selectedDraft.id
           ? {
               ...draft,
               platform,
-              title: nextVariant.title,
+              title: nextTitle,
               content: nextVariant.content,
               images: nextVariant.images,
               zhihuBlocks: platform === "zhihu" ? nextVariant.zhihuBlocks : undefined,
@@ -174,7 +185,7 @@ export function PublishCenter({
                 platform === "x"
                   ? (draft.xAccountId ?? xAccounts[0]?.id ?? null)
                   : draft.xAccountId,
-              platformVariants: variants,
+              platformVariants: nextVariants,
               automationResult: null,
             }
           : draft,
@@ -389,17 +400,19 @@ export function PublishCenter({
                   {selectedDraft.platform && selectedDraft.content.trim() ? "可进入填充" : "编辑中"}
                 </span>
               </div>
-              <label>
-                草稿名称
-                <input
-                  value={selectedDraft.title}
-                  maxLength={80}
-                  onChange={(event) => {
-                    updateSelectedDraft({ title: event.target.value });
-                    setNotice(null);
-                  }}
-                />
-              </label>
+              {selectedDraft.platform !== "x" ? (
+                <label>
+                  草稿名称
+                  <input
+                    value={selectedDraft.title}
+                    maxLength={80}
+                    onChange={(event) => {
+                      updateSelectedDraft({ title: event.target.value });
+                      setNotice(null);
+                    }}
+                  />
+                </label>
+              ) : null}
               {selectedDraft.source === "generated" ? (
                 selectedDraft.platformVariants && selectedDraft.platformVariants.length > 1 ? (
                   <label>
@@ -527,7 +540,9 @@ export function PublishCenter({
                   keepAtLeastOne={false}
                   onCreate={() => {
                     createXAccount.mutate();
-                    setNotice("已打开全新的 X 登录环境，登录成功后会自动加入账号列表");
+                    setNotice(
+                      "已发起 X 授权；配置 OAuth 后会在系统浏览器中打开并可使用 Google 登录",
+                    );
                     setError(null);
                   }}
                   onSelect={(accountId) => {
@@ -546,9 +561,13 @@ export function PublishCenter({
                       ? "请先选择平台；默认关闭"
                       : !PUBLISH_PLATFORMS[selectedDraft.platform].supportsAutoPublish
                         ? `${PLATFORM_LABELS[selectedDraft.platform]}填充完成后固定停在发布操作之前`
-                        : autoPublishByPlatform[selectedDraft.platform]
-                          ? `填充完成后将自动点击${PLATFORM_LABELS[selectedDraft.platform]}的发布按钮`
-                          : "默认关闭；填充后停在发布按钮前，由你检查并手动发布"}
+                        : selectedXUsesApi
+                          ? autoPublishByPlatform.x
+                            ? "点击发布按钮后将直接通过 X API 发布"
+                            : "通过 X API 发布；点击发布按钮后会再次要求确认"
+                          : autoPublishByPlatform[selectedDraft.platform]
+                            ? `填充完成后将自动点击${PLATFORM_LABELS[selectedDraft.platform]}的发布按钮`
+                            : "默认关闭；填充后停在发布按钮前，由你检查并手动发布"}
                   </small>
                 </span>
                 <label className="publish-auto-switch">
@@ -568,7 +587,9 @@ export function PublishCenter({
                       if (
                         enabled &&
                         !window.confirm(
-                          `开启后，填充完成将直接点击${PLATFORM_LABELS[platform]}的发布按钮，不再等待手动确认。确定开启吗？`,
+                          selectedXUsesApi
+                            ? "开启后，点击发布按钮会直接通过 X API 发布，不再进行二次确认。确定开启吗？"
+                            : `开启后，填充完成将直接点击${PLATFORM_LABELS[platform]}的发布按钮，不再等待手动确认。确定开启吗？`,
                         )
                       ) {
                         return;
@@ -675,20 +696,41 @@ export function PublishCenter({
                         ? "打开知乎写文章页面，填入标题、正文和本地配图"
                         : selectedDraft.platform === "x"
                           ? autoPublishByPlatform.x
-                            ? "打开 X 发帖页面，填入正文和配图后自动点击 Post"
-                            : "打开 X 发帖页面并填入正文和最多 4 张配图"
+                            ? "通过 X API 直接发布正文和最多 4 张配图"
+                            : selectedXUsesApi
+                              ? "确认后通过 X API 发布正文和最多 4 张配图"
+                              : "打开 X 发帖页面并填入正文和最多 4 张配图"
                           : "当前平台尚未接入填充"
                   }
-                  onClick={() => openPlatform.mutate()}
+                  onClick={() => {
+                    if (
+                      selectedXUsesApi &&
+                      !autoPublishByPlatform.x &&
+                      !window.confirm("将通过 X API 直接发布当前正文和配图，确定继续吗？")
+                    ) {
+                      return;
+                    }
+                    openPlatform.mutate();
+                  }}
                 >
-                  {openPlatform.isPending ? "正在打开并填充…" : "一键填充到平台"}
+                  {openPlatform.isPending
+                    ? selectedXUsesApi
+                      ? "正在通过 X API 发布…"
+                      : "正在打开并填充…"
+                    : selectedXUsesApi
+                      ? "发布到 X"
+                      : "一键填充到平台"}
                 </button>
                 <small>
-                  {selectedDraft.platform === "zhihu"
-                    ? "知乎内容填充完成后会停在发布操作之前，由你检查并手动确认。"
-                    : selectedDraft.platform && autoPublishByPlatform[selectedDraft.platform]
-                      ? "自动发布已开启：填充完成后程序会直接点击平台发布按钮。"
-                      : "自动发布已关闭：程序会停在最终发布按钮前，由你检查并手动确认。"}
+                  {selectedXUsesApi
+                    ? autoPublishByPlatform.x
+                      ? "自动发布已开启：点击按钮后会直接通过 X API 发布。"
+                      : "X API 发布会在点击按钮后再次确认；开启自动发布可跳过该确认。"
+                    : selectedDraft.platform === "zhihu"
+                      ? "知乎内容填充完成后会停在发布操作之前，由你检查并手动确认。"
+                      : selectedDraft.platform && autoPublishByPlatform[selectedDraft.platform]
+                        ? "自动发布已开启：填充完成后程序会直接点击平台发布按钮。"
+                        : "自动发布已关闭：程序会停在最终发布按钮前，由你检查并手动确认。"}
                 </small>
               </footer>
             </>

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { PublishAutomationResult, XAccount } from "@yoom/desktop-contracts";
-import { app, BrowserWindow, session } from "electron";
+import { app, BrowserWindow, type Session, session } from "electron";
 import {
   chooseFileInSystemDialog,
   clickWithSystemMouse,
@@ -10,6 +10,14 @@ import {
   waitForSystemFileDialog,
 } from "./native-input";
 import { X_SELECTORS } from "./platforms/x/selectors";
+import {
+  authorizeXApiAccount,
+  deleteXApiAccount,
+  hasXApiAccount,
+  isXApiConfigured,
+  listXApiAccounts,
+  publishXApiPost,
+} from "./x-api-client";
 
 const X_COMPOSE_URL = "https://x.com/compose/post";
 const PRIVATE_SESSION_DIRECTORY = "private-platform-sessions";
@@ -34,6 +42,7 @@ export async function openAndFillX(
   assetPaths: readonly string[],
   autoPublish: boolean,
 ): Promise<PublishAutomationResult> {
+  if (hasXApiAccount(accountId)) return publishXApiPost(accountId, content, assetPaths);
   const window = await openXWindow(accountId);
   return fillXWindow(window, content, assetPaths, autoPublish);
 }
@@ -44,15 +53,24 @@ export async function continueFillingX(
   assetPaths: readonly string[],
   autoPublish: boolean,
 ): Promise<PublishAutomationResult> {
+  if (hasXApiAccount(accountId)) return publishXApiPost(accountId, content, assetPaths);
   const window = await openXWindow(accountId);
   return fillXWindow(window, content, assetPaths, autoPublish);
 }
 
 export async function listXAccounts(): Promise<XAccount[]> {
-  return loadXAccounts().map(({ id, name }) => ({ id, name }));
+  return [
+    ...listXApiAccounts(),
+    ...loadXAccounts().map(({ id, name }) => ({ id, name, mode: "browser" as const })),
+  ];
 }
 
 export async function createXAccount(): Promise<XAccount> {
+  if (isXApiConfigured()) return authorizeXApiAccount();
+  return createBrowserXAccount();
+}
+
+async function createBrowserXAccount(): Promise<XAccount> {
   const accountId = randomUUID();
   const pendingAccount: StoredXAccount = {
     id: accountId,
@@ -74,15 +92,19 @@ export async function createXAccount(): Promise<XAccount> {
   );
   if (existing) {
     await discardPendingXAccount(pendingAccount);
-    return { id: existing.id, name: existing.name };
+    return { id: existing.id, name: existing.name, mode: "browser" };
   }
 
   const account = { ...pendingAccount, name: identity.name, userId: identity.userId };
   saveXAccounts([...accounts, account]);
-  return { id: account.id, name: account.name };
+  return { id: account.id, name: account.name, mode: "browser" };
 }
 
 export async function deleteXAccount(accountId: string): Promise<XAccount[]> {
+  if (hasXApiAccount(accountId)) {
+    deleteXApiAccount(accountId);
+    return listXAccounts();
+  }
   const accounts = loadXAccounts();
   const account = accounts.find((candidate) => candidate.id === accountId);
   if (!account) throw new Error("要删除的 X 账号不存在");
@@ -129,12 +151,7 @@ async function openXWindowForAccount(account: StoredXAccount): Promise<BrowserWi
       xWindow = null;
       activeXAccountId = null;
     });
-    createdWindow.webContents.setWindowOpenHandler(({ url }) => ({
-      action: isAllowedXUrl(url) ? "allow" : "deny",
-    }));
-    createdWindow.webContents.on("will-navigate", (event, url) => {
-      if (!isAllowedXUrl(url)) event.preventDefault();
-    });
+    configureXLoginWindow(createdWindow, xSession);
     activeXAccountId = account.id;
   }
 
@@ -484,6 +501,60 @@ function isAllowedXUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isAllowedGoogleLoginUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      (url.hostname === "accounts.google.com" ||
+        url.hostname === "accounts.googleusercontent.com" ||
+        url.hostname.endsWith(".accounts.googleusercontent.com"))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedXLoginUrl(value: string): boolean {
+  return isAllowedXUrl(value) || isAllowedGoogleLoginUrl(value);
+}
+
+function configureXLoginWindow(
+  window: BrowserWindow,
+  xSession: Session,
+  allowBlankNavigation = false,
+): void {
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (url !== "about:blank" && !isAllowedXLoginUrl(url)) return { action: "deny" };
+    return {
+      action: "allow",
+      overrideBrowserWindowOptions: {
+        width: 560,
+        height: 760,
+        minWidth: 420,
+        minHeight: 600,
+        title: "Google 登录 X",
+        show: true,
+        parent: window,
+        webPreferences: {
+          session: xSession,
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+        },
+      },
+    };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (isAllowedXLoginUrl(url)) return;
+    if (allowBlankNavigation && url === "about:blank") return;
+    event.preventDefault();
+  });
+  window.webContents.on("did-create-window", (childWindow) => {
+    configureXLoginWindow(childWindow, xSession, true);
+  });
 }
 
 function delay(milliseconds: number): Promise<void> {

@@ -115,9 +115,11 @@ export function PublishDraftSidebar({
                               </>
                             ) : (
                               <>
-                                <button type="button" onClick={() => onBeginRename(draft)}>
-                                  重命名
-                                </button>
+                                {draft.platform !== "x" ? (
+                                  <button type="button" onClick={() => onBeginRename(draft)}>
+                                    重命名
+                                  </button>
+                                ) : null}
                                 <button type="button" onClick={() => onTogglePinned(draft.id)}>
                                   {draft.pinned ? "取消置顶" : "置顶"}
                                 </button>

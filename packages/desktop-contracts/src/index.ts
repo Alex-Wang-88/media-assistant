@@ -655,6 +655,7 @@ export type ZhihuFillInput = z.infer<typeof zhihuFillInputSchema>;
 export const xAccountSchema = z.object({
   id: z.uuid(),
   name: z.string().trim().min(1).max(40),
+  mode: z.enum(["api", "browser"]),
 });
 export type XAccount = z.infer<typeof xAccountSchema>;
 export const deleteXAccountInputSchema = z.object({

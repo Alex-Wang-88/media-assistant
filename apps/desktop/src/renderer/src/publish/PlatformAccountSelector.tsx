@@ -1,6 +1,6 @@
 export type PublishAccount = { id: string; name: string };
 
-export function PlatformAccountSelector({
+export function PlatformAccountSelector<TAccount extends PublishAccount>({
   platformLabel,
   accounts,
   selectedAccountId,
@@ -14,7 +14,7 @@ export function PlatformAccountSelector({
   onDelete,
 }: {
   platformLabel: string;
-  accounts: PublishAccount[];
+  accounts: TAccount[];
   selectedAccountId: string | null;
   newAccountValue: string;
   busy: boolean;
@@ -23,7 +23,7 @@ export function PlatformAccountSelector({
   keepAtLeastOne: boolean;
   onSelect(accountId: string | null): void;
   onCreate(): void;
-  onDelete(account: PublishAccount): void;
+  onDelete(account: TAccount): void;
 }) {
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
   return (
@@ -64,7 +64,7 @@ export function PlatformAccountSelector({
             {deleting ? "正在删除…" : "删除当前账号"}
           </button>
         </span>
-        <small>已有账号复用各自登录状态；使用新账号会打开完全空白的登录环境</small>
+        <small>已有账号复用各自登录状态；使用新账号会打开独立的登录或授权流程</small>
       </label>
       {creating ? (
         <small className="publish-account-login-status">

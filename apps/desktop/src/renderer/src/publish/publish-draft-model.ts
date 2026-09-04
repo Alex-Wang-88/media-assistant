@@ -45,6 +45,25 @@ export function createDraft(
   };
 }
 
+export function xDraftTitle(content: string): string {
+  const firstParagraph = content
+    .trim()
+    .split(/\n\s*\n/, 1)[0]
+    ?.replace(/\s+/g, " ")
+    .trim();
+  if (!firstParagraph) return "未命名 X 草稿";
+  return Array.from(firstParagraph).slice(0, 48).join("");
+}
+
+export function normalizeXDraftTitle(draft: MemoryPublishDraft): MemoryPublishDraft {
+  const platformVariants = draft.platformVariants?.map((variant) =>
+    variant.platform === "x" ? { ...variant, title: xDraftTitle(variant.content) } : variant,
+  );
+  return draft.platform === "x"
+    ? { ...draft, title: xDraftTitle(draft.content), platformVariants }
+    : { ...draft, platformVariants };
+}
+
 export function contentToZhihuBlocks(content: string): ZhihuContentBlock[] {
   const paragraphs = content
     .split(/\n{2,}/)
