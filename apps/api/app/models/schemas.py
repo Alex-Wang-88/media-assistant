@@ -13,6 +13,7 @@ class Platform(StrEnum):
     WEIBO = "weibo"
     BILIBILI = "bilibili"
     XIAOHONGSHU = "xiaohongshu"
+    X = "x"
 
 
 class ArticleRequest(BaseModel):
@@ -186,7 +187,7 @@ class PlatformContentGenerateRequest(BaseModel):
     request_id: UUID = Field(alias="requestId")
     session_id: UUID = Field(alias="sessionId")
     project_id: UUID = Field(alias="projectId")
-    platform: Literal[Platform.BILIBILI, Platform.ZHIHU]
+    platform: Literal[Platform.BILIBILI, Platform.ZHIHU, Platform.X]
     persona_rag: str = Field(alias="personaRag", min_length=1, max_length=50_000)
     product_conversation: list[ChatMessage] = Field(
         alias="productConversation",
@@ -198,7 +199,7 @@ class PlatformContentGenerateRequest(BaseModel):
 class PlatformContentResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    platform: Literal[Platform.BILIBILI, Platform.ZHIHU]
+    platform: Literal[Platform.BILIBILI, Platform.ZHIHU, Platform.X]
     title: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=100_000)
 

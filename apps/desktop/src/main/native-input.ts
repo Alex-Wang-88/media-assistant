@@ -32,6 +32,26 @@ export async function replaceTextWithSystemShortcut(content: string): Promise<vo
   throw new Error("当前仅支持 macOS 和 Windows 的系统粘贴操作");
 }
 
+export async function appendTextWithSystemShortcut(content: string): Promise<void> {
+  clipboard.writeText(content);
+  if (process.platform === "darwin") {
+    await runAppleScript(`
+      tell application "System Events"
+        keystroke "v" using command down
+      end tell
+    `);
+    return;
+  }
+  if (process.platform === "win32") {
+    await runPowerShell(`
+      $shell = New-Object -ComObject WScript.Shell
+      $shell.SendKeys('^v')
+    `);
+    return;
+  }
+  throw new Error("当前仅支持 macOS 和 Windows 的系统粘贴操作");
+}
+
 export async function deleteTextBackwardWithSystemKeyboard(count: number): Promise<void> {
   if (!Number.isSafeInteger(count) || count < 1 || count > 2) {
     throw new Error("要清理的 B 站尾部字符数量无效");

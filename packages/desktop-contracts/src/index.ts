@@ -9,6 +9,7 @@ export const platformSchema = z.enum([
   "weibo",
   "bilibili",
   "xiaohongshu",
+  "x",
 ]);
 export type Platform = z.infer<typeof platformSchema>;
 
@@ -447,7 +448,7 @@ export type ProductPromotionAgentApiTurnResult = z.infer<
   typeof productPromotionAgentApiTurnResultSchema
 >;
 
-export const platformContentPlatformSchema = z.enum(["bilibili", "zhihu"]);
+export const platformContentPlatformSchema = z.enum(["bilibili", "zhihu", "x"]);
 export type PlatformContentPlatform = z.infer<typeof platformContentPlatformSchema>;
 
 export const platformContentGenerateInputSchema = z.object({
@@ -525,10 +526,29 @@ export type LocalPublishImage = z.infer<typeof localPublishImageSchema>;
 export const publishDraftImageReferenceSchema = localPublishImageSchema.omit({ previewUrl: true });
 export type PublishDraftImageReference = z.infer<typeof publishDraftImageReferenceSchema>;
 
+export const zhihuTextBlockSchema = z.object({
+  id: z.uuid(),
+  type: z.literal("text"),
+  content: z.string().max(100_000),
+});
+export const zhihuImageBlockSchema = z.object({
+  id: z.uuid(),
+  type: z.literal("image"),
+  imageId: z.uuid(),
+  caption: z.string().max(140),
+});
+export const zhihuContentBlockSchema = z.discriminatedUnion("type", [
+  zhihuTextBlockSchema,
+  zhihuImageBlockSchema,
+]);
+export type ZhihuContentBlock = z.infer<typeof zhihuContentBlockSchema>;
+
 export const publishDraftPlatformVariantSchema = z.object({
   platform: platformSchema,
   title: z.string().max(80),
   content: z.string().max(100_000),
+  images: z.array(localPublishImageSchema).max(20).default([]),
+  zhihuBlocks: z.array(zhihuContentBlockSchema).max(200).optional(),
 });
 export type PublishDraftPlatformVariant = z.infer<typeof publishDraftPlatformVariantSchema>;
 
@@ -538,20 +558,35 @@ export const publishDraftSchema = z.object({
   platform: platformSchema.nullable(),
   bilibiliAccountId: z.uuid().nullable(),
   zhihuAccountId: z.uuid().nullable().optional(),
+  xAccountId: z.uuid().nullable().optional(),
   content: z.string().max(100_000),
   images: z.array(localPublishImageSchema).max(20),
   source: z.enum(["manual", "generated"]),
   pinned: z.boolean(),
-  platformVariants: z.array(publishDraftPlatformVariantSchema).max(6).optional(),
+  platformVariants: z.array(publishDraftPlatformVariantSchema).max(7).optional(),
+  zhihuBlocks: z.array(zhihuContentBlockSchema).max(200).optional(),
 });
 export type PublishDraft = z.infer<typeof publishDraftSchema>;
 
+export const persistedPublishDraftPlatformVariantSchema = publishDraftPlatformVariantSchema.extend({
+  images: z.array(publishDraftImageReferenceSchema).max(20).default([]),
+});
+
 export const persistedPublishDraftSchema = publishDraftSchema.extend({
   images: z.array(publishDraftImageReferenceSchema).max(20),
+  platformVariants: z.array(persistedPublishDraftPlatformVariantSchema).max(7).optional(),
 });
 export type PersistedPublishDraft = z.infer<typeof persistedPublishDraftSchema>;
 
-const autoPublishByPlatformSchema = z.record(platformSchema, z.boolean());
+const autoPublishByPlatformSchema = z.object({
+  wechat: z.boolean(),
+  toutiao: z.boolean(),
+  zhihu: z.boolean(),
+  weibo: z.boolean(),
+  bilibili: z.boolean(),
+  xiaohongshu: z.boolean(),
+  x: z.boolean().default(false),
+});
 
 const publishDraftStateBaseSchema = z.object({
   version: z.literal(1),
@@ -583,7 +618,7 @@ export const selectPublishImagesInputSchema = z.object({
   remaining: z.number().int().min(1).max(20),
 });
 export const releasePublishImagesInputSchema = z.object({
-  ids: z.array(z.uuid()).max(20),
+  ids: z.array(z.uuid()).max(120),
 });
 export const bilibiliAccountSchema = z.object({
   id: z.uuid(),
@@ -613,10 +648,26 @@ export const deleteZhihuAccountInputSchema = z.object({
 export const zhihuFillInputSchema = z.object({
   accountId: z.uuid(),
   title: z.string().trim().min(1).max(80),
-  content: z.string().trim().min(1).max(100_000),
-  imageIds: z.array(z.uuid()).max(20),
+  blocks: z.array(zhihuContentBlockSchema).min(1).max(200),
 });
 export type ZhihuFillInput = z.infer<typeof zhihuFillInputSchema>;
+
+export const xAccountSchema = z.object({
+  id: z.uuid(),
+  name: z.string().trim().min(1).max(40),
+  mode: z.enum(["api", "browser"]),
+});
+export type XAccount = z.infer<typeof xAccountSchema>;
+export const deleteXAccountInputSchema = z.object({
+  accountId: z.uuid(),
+});
+export const xFillInputSchema = z.object({
+  accountId: z.uuid(),
+  content: z.string().trim().min(1).max(100_000),
+  imageIds: z.array(z.uuid()).max(4),
+  autoPublish: z.boolean().default(false),
+});
+export type XFillInput = z.infer<typeof xFillInputSchema>;
 
 export const publishAutomationResultSchema = z.object({
   state: z.enum(["waiting_for_login", "filled", "published", "needs_attention"]),
@@ -734,6 +785,11 @@ export interface DesktopApi {
     deleteZhihuAccount?(accountId: string): Promise<ZhihuAccount[]>;
     openZhihu?(input: ZhihuFillInput): Promise<PublishAutomationResult>;
     fillZhihu?(input: ZhihuFillInput): Promise<PublishAutomationResult>;
+    listXAccounts(): Promise<XAccount[]>;
+    createXAccount(): Promise<XAccount>;
+    deleteXAccount(accountId: string): Promise<XAccount[]>;
+    openX(input: XFillInput): Promise<PublishAutomationResult>;
+    fillX(input: XFillInput): Promise<PublishAutomationResult>;
   };
 }
 
@@ -780,4 +836,9 @@ export const ipcChannels = {
   publishZhihuAccountDelete: "publish:zhihu-account-delete",
   publishZhihuOpen: "publish:zhihu-open",
   publishZhihuFill: "publish:zhihu-fill",
+  publishXAccountsList: "publish:x-accounts-list",
+  publishXAccountCreate: "publish:x-account-create",
+  publishXAccountDelete: "publish:x-account-delete",
+  publishXOpen: "publish:x-open",
+  publishXFill: "publish:x-fill",
 } as const;

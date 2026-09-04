@@ -177,6 +177,7 @@ describe("desktop contracts", () => {
         weibo: false,
         bilibili: false,
         xiaohongshu: false,
+        x: false,
       },
     };
 

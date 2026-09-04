@@ -37,6 +37,7 @@ describe("publish center persistence", () => {
         weibo: false,
         bilibili: false,
         xiaohongshu: false,
+        x: false,
       },
     };
     const saveDrafts = vi.fn(async () => undefined);
@@ -47,6 +48,7 @@ describe("publish center persistence", () => {
           loadDrafts: vi.fn(async () => restored),
           saveDrafts,
           listBilibiliAccounts: vi.fn(async () => []),
+          listXAccounts: vi.fn(async () => []),
         },
       } as unknown as DesktopApi,
     });
@@ -117,6 +119,7 @@ describe("publish center persistence", () => {
         weibo: false,
         bilibili: false,
         xiaohongshu: false,
+        x: false,
       },
     };
     Object.defineProperty(window, "desktop", {
@@ -126,6 +129,7 @@ describe("publish center persistence", () => {
           loadDrafts: vi.fn(async () => restored),
           saveDrafts: vi.fn(async () => undefined),
           listBilibiliAccounts: vi.fn(async () => []),
+          listXAccounts: vi.fn(async () => []),
           releaseImages: vi.fn(async () => undefined),
         },
       } as unknown as DesktopApi,
